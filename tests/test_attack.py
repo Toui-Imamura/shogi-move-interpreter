@@ -1,0 +1,178 @@
+"""
+F11～F15のテスト。
+"""
+
+import cshogi
+
+from features.attack import (
+    attack_base_set,
+    attacking_piece_set,
+    f11_attack_pressure,
+    f12_attackers,
+    f13_material_gain_process,
+    f14_attack_base,
+    f15_attack_continuity,
+)
+from features.transition import make_usi_variation
+
+
+def test_f11_initial_position_is_balanced():
+    """初期局面ではF11のBlack/Whiteが対称になる。"""
+    board = cshogi.Board()
+
+    result = f11_attack_pressure(board)
+
+    assert result.difference == 0.0
+    assert result.black == result.white
+
+
+def test_f12_initial_position_is_balanced():
+    """初期局面ではF12のBlack/Whiteが対称になる。"""
+    board = cshogi.Board()
+
+    result = f12_attackers(board)
+
+    assert result.difference == 0
+    assert result.black == result.white
+
+
+def test_f11_has_nonnegative_pressure_components():
+    """F11の構成要素が正常に計算される。"""
+    board = cshogi.Board()
+
+    result = f11_attack_pressure(board)
+
+    assert result.black_king_control >= 0
+    assert result.white_king_control >= 0
+
+    assert result.black_attackers >= 0
+    assert result.white_attackers >= 0
+
+    assert result.black_invasion >= 0
+    assert result.white_invasion >= 0
+
+
+def test_f12_attack_piece_set_is_valid():
+    """F12の攻撃参加駒集合が正常に取得できる。"""
+    board = cshogi.Board()
+
+    black = attacking_piece_set(board, cshogi.BLACK)
+    white = attacking_piece_set(board, cshogi.WHITE)
+
+    assert isinstance(black, set)
+    assert isinstance(white, set)
+
+
+def test_f13_initial_position_has_no_gain():
+    """1局面だけではF13の駒得形成は発生しない。"""
+    board = cshogi.Board()
+
+    variation = make_usi_variation(
+        board,
+        [],
+    )
+
+    result = f13_material_gain_process(
+        variation
+    )
+
+    assert result.black == 0.0
+    assert result.white == 0.0
+    assert result.difference == 0.0
+
+
+def test_f13_non_capture_variation_has_no_material_gain():
+    """駒を取らない変化ではF13の駒得形成は0。"""
+    board = cshogi.Board()
+
+    variation = make_usi_variation(
+        board,
+        [
+            "7g7f",
+            "3c3d",
+            "2g2f",
+            "8c8d",
+        ],
+    )
+
+    result = f13_material_gain_process(
+        variation
+    )
+
+    assert result.black == 0.0
+    assert result.white == 0.0
+    assert result.difference == 0.0
+
+
+def test_f14_initial_position_is_symmetric():
+    """初期局面ではF14の変化量が0。"""
+    board = cshogi.Board()
+
+    result = f14_attack_base(
+        board,
+        board,
+    )
+
+    assert result.black == 0.0
+    assert result.white == 0.0
+    assert result.difference == 0.0
+
+
+def test_f14_attack_base_set_returns_sets():
+    """攻撃拠点集合が正常に取得できる。"""
+    board = cshogi.Board()
+
+    black = attack_base_set(
+        board,
+        cshogi.BLACK,
+    )
+
+    white = attack_base_set(
+        board,
+        cshogi.WHITE,
+    )
+
+    assert isinstance(black, set)
+    assert isinstance(white, set)
+
+
+def test_f15_single_position_has_valid_continuity():
+    """1局面のVariationでもF15を計算できる。"""
+    board = cshogi.Board()
+
+    variation = make_usi_variation(
+        board,
+        [],
+    )
+
+    result = f15_attack_continuity(
+        variation
+    )
+
+    assert 0.0 <= result.black <= 1.0
+    assert 0.0 <= result.white <= 1.0
+    assert result.steps == 1
+
+
+def test_f15_continuity_has_valid_range():
+    """複数局面でF15が0～1の範囲になる。"""
+    board = cshogi.Board()
+
+    variation = make_usi_variation(
+        board,
+        [
+            "7g7f",
+            "3c3d",
+            "2g2f",
+            "8c8d",
+        ],
+    )
+
+    result = f15_attack_continuity(
+        variation
+    )
+
+    assert 0.0 <= result.black <= 1.0
+    assert 0.0 <= result.white <= 1.0
+
+    assert result.steps == 5
