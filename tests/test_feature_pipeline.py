@@ -289,7 +289,34 @@ def test_f40_uses_immediate_feature_deltas():
     assert dict(
         result.f40.feature_deltas
     ) == dict(
-        result.immediate_deltas
+        result.normalized_deltas
+    )
+
+
+def test_normalized_deltas_are_different_from_raw_deltas():
+    """正規化によって生の変化量とは異なる値になる。"""
+
+    board = cshogi.Board()
+
+    move = board.move_from_usi("7g7f")
+
+    result = compute_feature_pipeline(
+        before=board,
+        move=move,
+    )
+
+    assert result.immediate_deltas["F07"] == pytest.approx(
+        7.0
+    )
+
+    assert result.normalized_deltas["F07"] == pytest.approx(
+        0.6043677771,
+        abs=1e-6,
+    )
+
+    assert (
+        result.immediate_deltas["F07"]
+        != result.normalized_deltas["F07"]
     )
 
 
