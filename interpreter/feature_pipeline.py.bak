@@ -92,7 +92,7 @@ def compute_feature_deltas(
     current: Any,
     future: Any,
     extractors: Mapping[str, FeatureExtractor],
-) -> FeaturePipelineResult:
+) -> GenericFeaturePipelineResult:
     """
     任意の特徴量抽出器を使用して差分を計算する。
 
@@ -117,7 +117,7 @@ def compute_feature_deltas(
             future=future_value,
         )
 
-    return FeaturePipelineResult(
+    return GenericFeaturePipelineResult(
         feature_values=feature_values,
     )
 

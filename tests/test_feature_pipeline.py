@@ -1,9 +1,12 @@
 import pytest
 
 from interpreter.feature_pipeline import (
-    FeaturePipelineResult,
+    UnifiedFeaturePipelineResult,
     FeatureValuePair,
+    FeaturePipelineResult,
     compute_feature_deltas,
+    compute_feature_pipeline,
+    compute_immediate_features,
 )
 
 
@@ -176,3 +179,167 @@ def test_integer_values_are_converted_to_float():
     assert isinstance(feature.current, float)
     assert isinstance(feature.future, float)
     assert feature.delta == pytest.approx(3.0)
+
+# ============================================================
+# F01〜F40 unified pipeline tests
+# ============================================================
+
+import cshogi
+
+from interpreter.feature_pipeline import (
+    FeaturePipelineResult,
+    compute_feature_pipeline,
+    compute_immediate_features,
+)
+
+
+def test_real_shogi_immediate_features():
+    """実際のcshogi局面でF01〜F33を計算できる。"""
+
+    board = cshogi.Board()
+
+    move = board.move_from_usi("7g7f")
+
+    after, deltas = compute_immediate_features(
+        board,
+        move,
+    )
+
+    assert isinstance(
+        after,
+        cshogi.Board,
+    )
+
+    assert len(deltas) == 31
+
+    for value in deltas.values():
+        assert isinstance(value, float)
+
+
+def test_unified_pipeline_without_variation():
+    """VariationなしでF01〜F33とF40を計算できる。"""
+
+    board = cshogi.Board()
+
+    move = board.move_from_usi("7g7f")
+
+    result = compute_feature_pipeline(
+        before=board,
+        move=move,
+    )
+
+    assert isinstance(
+        result,
+        UnifiedFeaturePipelineResult,
+    )
+
+    assert len(result.immediate_deltas) == 31
+
+    assert result.variation is None
+
+    assert result.mcts is None
+
+    assert result.f40_degree >= 0.0
+
+
+def test_unified_pipeline_with_variation():
+    """Variationを与えるとF13/F15/F34/F35/F36を取得できる。"""
+
+    board = cshogi.Board()
+
+    move = board.move_from_usi("7g7f")
+
+    variation_moves = [
+        "7g7f",
+        "3c3d",
+        "2g2f",
+    ]
+
+    result = compute_feature_pipeline(
+        before=board,
+        move=move,
+        variation_moves=variation_moves,
+    )
+
+    assert result.variation is not None
+
+    variation_deltas = (
+        result.variation.variation_deltas
+    )
+
+    assert "F13" in variation_deltas
+    assert "F15" in variation_deltas
+    assert "F34_material" in variation_deltas
+    assert "F35" in variation_deltas
+    assert "F36" in variation_deltas
+
+
+def test_f40_uses_immediate_feature_deltas():
+    """F40にはF01〜F33の即時変化が入力される。"""
+
+    board = cshogi.Board()
+
+    move = board.move_from_usi("7g7f")
+
+    result = compute_feature_pipeline(
+        before=board,
+        move=move,
+    )
+
+    assert dict(
+        result.f40.feature_deltas
+    ) == dict(
+        result.immediate_deltas
+    )
+
+
+def test_feature_delta_accessor():
+    """特定特徴量の変化量を取得できる。"""
+
+    board = cshogi.Board()
+
+    move = board.move_from_usi("7g7f")
+
+    result = compute_feature_pipeline(
+        before=board,
+        move=move,
+    )
+
+    assert result.get_delta("F06") == pytest.approx(
+        result.immediate_deltas["F06"]
+    )
+
+
+def test_illegal_move_is_rejected_by_unified_pipeline():
+    """違法手は統合パイプラインで拒否される。"""
+
+    board = cshogi.Board()
+
+    move = board.move_from_usi("5a5b")
+
+    with pytest.raises(ValueError):
+        compute_feature_pipeline(
+            before=board,
+            move=move,
+        )
+
+
+def test_f40_feature_weights():
+    """F40の特徴量重みを指定できる。"""
+
+    board = cshogi.Board()
+
+    move = board.move_from_usi("7g7f")
+
+    weights = {
+        "F06": 2.0,
+        "F07": 0.5,
+    }
+
+    result = compute_feature_pipeline(
+        before=board,
+        move=move,
+        feature_weights=weights,
+    )
+
+    assert result.f40_degree >= 0.0
