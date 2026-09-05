@@ -1,0 +1,10 @@
+{"game_id": 0, "ply": 1, "sfen": "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1", "move": "7g7f", "result": 2}
+{"game_id": 0, "ply": 2, "sfen": "lnsgkgsnl/1r5b1/ppppppppp/9/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL w - 2", "move": "3c3d", "result": 2}
+{"game_id": 0, "ply": 3, "sfen": "lnsgkgsnl/1r5b1/pppppp1pp/6p2/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL b - 3", "move": "2g2f", "result": 2}
+{"game_id": 0, "ply": 4, "sfen": "lnsgkgsnl/1r5b1/pppppp1pp/6p2/9/2P4P1/PP1PPPP1P/1B5R1/LNSGKGSNL w - 4", "move": "8c8d", "result": 2}
+{"game_id": 0, "ply": 5, "sfen": "lnsgkgsnl/1r5b1/p1pppp1pp/1p4p2/9/2P4P1/PP1PPPP1P/1B5R1/LNSGKGSNL b - 5", "move": "2f2e", "result": 2}
+{"game_id": 0, "ply": 6, "sfen": "lnsgkgsnl/1r5b1/p1pppp1pp/1p4p2/7P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL w - 6", "move": "8d8e", "result": 2}
+{"game_id": 0, "ply": 7, "sfen": "lnsgkgsnl/1r5b1/p1pppp1pp/6p2/1p5P1/2P6/PP1PPPP1P/1B5R1/LNSGKGSNL b - 7", "move": "7i7h", "result": 2}
+{"game_id": 0, "ply": 8, "sfen": "lnsgkgsnl/1r5b1/p1pppp1pp/6p2/1p5P1/2P6/PP1PPPP1P/1BS4R1/LN1GKGSNL w - 8", "move": "4a3b", "result": 2}
+{"game_id": 0, "ply": 9, "sfen": "lnsgk1snl/1r4gb1/p1pppp1pp/6p2/1p5P1/2P6/PP1PPPP1P/1BS4R1/LN1GKGSNL b - 9", "move": "8h7g", "result": 2}
+{"game_id": 0, "ply": 10, "sfen": "lnsgk1snl/1r4gb1/p1pppp1pp/6p2/1p5P1/2P6/PPBPPPP1P/2S4R1/LN1GKGSNL w - 10", "move": "5a4b", "result": 2}

@@ -23,6 +23,10 @@ from interpreter.feature_pipeline import (
     compute_feature_pipeline,
 )
 
+from features.normalization import (
+    normalize_default_feature_deltas,
+)
+
 
 def format_value(value: float) -> str:
     """特徴量の値を表示用に整形する。"""
@@ -193,6 +197,8 @@ def main() -> None:
 
     print_immediate_features(result)
 
+    print_normalized_features(result)
+
     print_variation_features(result)
 
     print_mcts_features(result)
@@ -203,6 +209,25 @@ def main() -> None:
         result,
         top_n=args.top,
     )
+
+
+def print_normalized_features(result) -> None:
+    """正規化後のF01〜F33を表示する。"""
+
+    normalized = normalize_default_feature_deltas(
+        result.immediate_deltas
+    )
+
+    print()
+    print("=" * 70)
+    print("正規化後 F01〜F33")
+    print("=" * 70)
+
+    for feature_name, value in normalized.items():
+        print(
+            f"{feature_name:>4}: "
+            f"{value:+.6f}"
+        )
 
 
 if __name__ == "__main__":

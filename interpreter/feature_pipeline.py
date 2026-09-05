@@ -43,6 +43,9 @@ from interpreter.mcts_features import (
     compute_mcts_features,
 )
 
+from features.normalization import (
+    normalize_default_feature_deltas,
+)
 
 # ============================================================
 # Generic feature-delta API
@@ -156,17 +159,19 @@ class UnifiedFeaturePipelineResult:
         指し手による局面転換度。
     """
 
-    before: cshogi.Board
-    after: cshogi.Board
+    before: Any
+    after: Any
     move: int
 
     immediate_deltas: Mapping[str, float]
+
+    normalized_deltas: Mapping[str, float]
 
     variation: VariationFeatureResult | None
 
     mcts: MCTSFeatureResult | None
 
-    f40: F40MoveTransition
+    f40: Any
 
     @property
     def f40_degree(self) -> float:
@@ -375,11 +380,18 @@ def compute_pipeline(
     # F40には直接入れない。
     # --------------------------------------------------------
 
+
+    normalized_deltas = (
+        normalize_default_feature_deltas(
+            immediate_deltas
+        )
+    )
+
     f40 = compute_move_transition(
-        current=before,
-        future=after,
-        feature_deltas=immediate_deltas,
-        feature_weights=feature_weights,
+        before,
+        after,
+        normalized_deltas,
+        feature_weights,
     )
 
     return UnifiedFeaturePipelineResult(
@@ -387,6 +399,7 @@ def compute_pipeline(
         after=after,
         move=move,
         immediate_deltas=immediate_deltas,
+        normalized_deltas=normalized_deltas,
         variation=variation_result,
         mcts=mcts_result,
         f40=f40,
