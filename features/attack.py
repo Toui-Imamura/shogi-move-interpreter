@@ -44,6 +44,12 @@ from .common import (
 )
 from .transition import Variation
 
+from dataclasses import dataclass
+
+from .transition import Variation
+
+
+
 
 # ---------------------------------------------------------------------------
 # 共通攻撃領域
@@ -637,3 +643,86 @@ def extract_attack_features(
         "F11": f11_attack_pressure(board),
         "F12": f12_attackers(board),
     }
+
+# ============================================================
+# F19 攻撃圧力変化
+# F20 攻撃参加駒数の変化
+# ============================================================
+
+
+@dataclass(frozen=True)
+class F19AttackPressureChange:
+    """
+    F19 攻撃圧力変化
+    """
+
+    black: float
+    white: float
+    difference: float
+
+
+def f19_attack_pressure_change(
+    before: cshogi.Board,
+    after: cshogi.Board,
+) -> F19AttackPressureChange:
+    """
+    F11の攻撃圧力について、
+    after - before の変化を計算する。
+    """
+    before_value = f11_attack_pressure(before)
+    after_value = f11_attack_pressure(after)
+
+    black_change = (
+        after_value.black
+        - before_value.black
+    )
+
+    white_change = (
+        after_value.white
+        - before_value.white
+    )
+
+    return F19AttackPressureChange(
+        black=black_change,
+        white=white_change,
+        difference=black_change - white_change,
+    )
+
+
+@dataclass(frozen=True)
+class F20AttackersChange:
+    """
+    F20 攻撃参加駒数の変化
+    """
+
+    black: int
+    white: int
+    difference: int
+
+
+def f20_attackers_change(
+    before: cshogi.Board,
+    after: cshogi.Board,
+) -> F20AttackersChange:
+    """
+    F12の攻撃参加駒数について、
+    after - before の変化を計算する。
+    """
+    before_value = f12_attackers(before)
+    after_value = f12_attackers(after)
+
+    black_change = (
+        after_value.black
+        - before_value.black
+    )
+
+    white_change = (
+        after_value.white
+        - before_value.white
+    )
+
+    return F20AttackersChange(
+        black=black_change,
+        white=white_change,
+        difference=black_change - white_change,
+    )

@@ -1,4 +1,5 @@
 import cshogi
+import pytest
 
 from features.activity import (
     attacks_from_square,
@@ -7,6 +8,10 @@ from features.activity import (
     f08_important_control,
     f09_idle_improvement,
     f10_activity,
+    f16_advancement,
+    f16_advancement_change,
+    f17_defense_pieces,
+    f18_defense_control,
 )
 
 
@@ -153,3 +158,39 @@ def test_f10_initial_position_is_balanced():
 
     assert result.black == result.white
     assert result.difference == 0.0
+
+def test_f16_initial_position_is_balanced():
+    board = cshogi.Board()
+
+    result = f16_advancement(board)
+
+    assert result.black == pytest.approx(result.white)
+    assert result.difference == pytest.approx(0.0)
+
+
+def test_f16_change_is_zero_for_same_position():
+    board = cshogi.Board()
+
+    result = f16_advancement_change(board, board)
+
+    assert result.black == pytest.approx(0.0)
+    assert result.white == pytest.approx(0.0)
+    assert result.difference == pytest.approx(0.0)
+
+
+def test_f17_initial_position_is_balanced():
+    board = cshogi.Board()
+
+    result = f17_defense_pieces(board)
+
+    assert result.black == result.white
+    assert result.difference == 0
+
+
+def test_f18_initial_position_is_balanced():
+    board = cshogi.Board()
+
+    result = f18_defense_control(board)
+
+    assert result.black == pytest.approx(result.white)
+    assert result.difference == pytest.approx(0.0)

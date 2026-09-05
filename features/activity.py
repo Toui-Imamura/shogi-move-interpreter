@@ -44,12 +44,15 @@ import cshogi
 from .common import (
     BLACK,
     WHITE,
+    iter_pieces,
+    square_to_file_rank,
     king_square,
     legal_moves,
     legal_move_count,
     tanh_normalize,
 )
 
+from dataclasses import dataclass
 
 # ---------------------------------------------------------------------------
 # Piece type constants
@@ -1057,3 +1060,297 @@ def extract_activity_features(
         "F08": f08_important_control(board),
         "F10": f10_activity(board),
     }
+
+# ============================================================
+# F16 駒の進出変化
+# ============================================================
+
+
+def advancement_score(
+    board: cshogi.Board,
+    color: int,
+) -> float:
+    """
+    指定した陣営の駒の進出度を計算する。
+
+    相手陣に近いほど高い値になる。
+    駒種ごとの細かな価値ではなく、
+    まずは「相手陣への進出」を共通尺度で表現する。
+
+    Black:
+        rank 1 が相手陣に近い。
+        rank 9 が自陣側。
+
+    White:
+        rank 9 が相手陣に近い。
+        rank 1 が自陣側。
+    """
+    total = 0.0
+    count = 0
+
+    for piece in iter_pieces(board):
+        if piece.color != color:
+            continue
+
+        file_, rank = square_to_file_rank(piece.square)
+
+        if color == BLACK:
+            score = (8 - rank) / 8.0
+        else:
+            score = rank / 8.0
+
+        total += score
+        count += 1
+
+    if count == 0:
+        return 0.0
+
+    return total / count
+
+
+def advancement_score_raw(
+    board: cshogi.Board,
+    color: int,
+) -> float:
+    """
+    平均化する前の進出度。
+
+    駒数の違いも含めて評価したい場合に利用する。
+    """
+    total = 0.0
+
+    for piece in iter_pieces(board):
+        if piece.color != color:
+            continue
+
+        _, rank = square_to_file_rank(piece.square)
+
+        if color == BLACK:
+            score = (9 - rank) / 8.0
+        else:
+            score = (rank - 1) / 8.0
+
+        total += score
+
+    return total
+
+
+@dataclass(frozen=True)
+class F16Advancement:
+    """
+    F16 駒の進出変化
+    """
+
+    black: float
+    white: float
+    difference: float
+
+
+def f16_advancement(
+    board: cshogi.Board,
+) -> F16Advancement:
+    """
+    現局面における駒の進出度。
+
+    B特徴量として使用する場合は、
+    S0 と Sv の差分を取る。
+    """
+    black = advancement_score(board, BLACK)
+    white = advancement_score(board, WHITE)
+
+    return F16Advancement(
+        black=black,
+        white=white,
+        difference=black - white,
+    )
+
+
+def f16_advancement_change(
+    before: cshogi.Board,
+    after: cshogi.Board,
+) -> F16Advancement:
+    """
+    F16の局面変化。
+
+    after - before を計算する。
+    """
+    before_black = advancement_score(before, BLACK)
+    before_white = advancement_score(before, WHITE)
+
+    after_black = advancement_score(after, BLACK)
+    after_white = advancement_score(after, WHITE)
+
+    black_change = after_black - before_black
+    white_change = after_white - before_white
+
+    return F16Advancement(
+        black=black_change,
+        white=white_change,
+        difference=black_change - white_change,
+    )
+
+# ============================================================
+# F17 玉周辺の守備駒数
+# F18 玉周辺の利き
+# ============================================================
+
+
+def defense_area(
+    board: cshogi.Board,
+    color: int,
+) -> set[int]:
+    """
+    自玉周辺の守備評価領域を返す。
+
+    玉を中心とした最大8マスを基本領域とする。
+
+    cshogiの内部座標は、
+        file = 0～8
+        rank = 0～8
+    であるため、盤面内判定もこの範囲で行う。
+    """
+    king = king_square(board, color)
+
+    file_, rank = square_to_file_rank(king)
+
+    area: set[int] = set()
+
+    for df in (-1, 0, 1):
+        for dr in (-1, 0, 1):
+            if df == 0 and dr == 0:
+                continue
+
+            nf = file_ + df
+            nr = rank + dr
+
+            # cshogiの盤面範囲
+            if 0 <= nf < 9 and 0 <= nr < 9:
+                target = file_rank_to_square(nf, nr)
+
+                if target is not None:
+                    area.add(target)
+
+    return area
+
+
+def defensive_piece_count(
+    board: cshogi.Board,
+    color: int,
+) -> int:
+    """
+    自玉周辺に配置されている自駒の数を数える。
+
+    「利き」ではなく、実際の駒の配置を数える。
+    """
+    area = defense_area(board, color)
+
+    count = 0
+
+    for piece in iter_pieces(board):
+        if piece.color != color:
+            continue
+
+        if piece.square in area:
+            count += 1
+
+    return count
+
+
+@dataclass(frozen=True)
+class F17DefensePieces:
+    """
+    F17 玉周辺の守備駒数
+    """
+
+    black: int
+    white: int
+    difference: int
+
+
+def f17_defense_pieces(
+    board: cshogi.Board,
+) -> F17DefensePieces:
+    black = defensive_piece_count(board, BLACK)
+    white = defensive_piece_count(board, WHITE)
+
+    return F17DefensePieces(
+        black=black,
+        white=white,
+        difference=black - white,
+    )
+
+
+def defense_control(
+    board: cshogi.Board,
+    color: int,
+) -> int:
+    """
+    自玉周辺に対する自陣営の利き数。
+    """
+    area = defense_area(board, color)
+
+    return sum(
+        1
+        for square in area
+        if square in controlled_squares(board, color)
+    )
+
+
+def enemy_defense_control(
+    board: cshogi.Board,
+    color: int,
+) -> int:
+    """
+    自玉周辺に対する相手の利き数。
+    """
+    opponent = WHITE if color == BLACK else BLACK
+    area = defense_area(board, color)
+
+    return sum(
+        1
+        for square in area
+        if square in controlled_squares(board, opponent)
+    )
+
+
+@dataclass(frozen=True)
+class F18DefenseControl:
+    """
+    F18 玉周辺の利き
+    """
+
+    black: float
+    white: float
+    difference: float
+
+    black_own_control: int
+    black_enemy_control: int
+
+    white_own_control: int
+    white_enemy_control: int
+
+
+def f18_defense_control(
+    board: cshogi.Board,
+) -> F18DefenseControl:
+    """
+    自玉周辺における自軍の利きと敵軍の利きを評価する。
+    """
+    black_own = defense_control(board, BLACK)
+    black_enemy = enemy_defense_control(board, BLACK)
+
+    white_own = defense_control(board, WHITE)
+    white_enemy = enemy_defense_control(board, WHITE)
+
+    black_value = float(black_own - black_enemy)
+    white_value = float(white_own - white_enemy)
+
+    return F18DefenseControl(
+        black=black_value,
+        white=white_value,
+        difference=black_value - white_value,
+        black_own_control=black_own,
+        black_enemy_control=black_enemy,
+        white_own_control=white_own,
+        white_enemy_control=white_enemy,
+    )

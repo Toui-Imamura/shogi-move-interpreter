@@ -3,6 +3,7 @@ F11～F15のテスト。
 """
 
 import cshogi
+import pytest
 
 from features.attack import (
     attack_base_set,
@@ -12,6 +13,8 @@ from features.attack import (
     f13_material_gain_process,
     f14_attack_base,
     f15_attack_continuity,
+    f19_attack_pressure_change,
+    f20_attackers_change,
 )
 from features.transition import make_usi_variation
 
@@ -176,3 +179,22 @@ def test_f15_continuity_has_valid_range():
     assert 0.0 <= result.white <= 1.0
 
     assert result.steps == 5
+
+def test_f19_same_position_has_zero_change():
+    board = cshogi.Board()
+
+    result = f19_attack_pressure_change(board, board)
+
+    assert result.black == pytest.approx(0.0)
+    assert result.white == pytest.approx(0.0)
+    assert result.difference == pytest.approx(0.0)
+
+
+def test_f20_same_position_has_zero_change():
+    board = cshogi.Board()
+
+    result = f20_attackers_change(board, board)
+
+    assert result.black == 0
+    assert result.white == 0
+    assert result.difference == 0
