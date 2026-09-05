@@ -40,7 +40,6 @@ from .activity import (
 )
 from .common import (
     king_square,
-    legal_move_count,
     tanh_normalize,
 )
 
@@ -91,10 +90,10 @@ def _king_escape_count(
     color: int,
 ) -> int:
     """
-    玉の合法的な移動先の数を計算する。
+    指定した色の玉の合法的な移動先の数を計算する。
 
-    cshogiの合法手を調べ、
-    玉を移動元とする通常の指し手だけを数える。
+    board.turnに依存しないように、局面のコピーを作成して
+    対象色を手番に設定した上で合法手を調べる。
     """
 
     king = king_square(board, color)
@@ -102,28 +101,23 @@ def _king_escape_count(
     if king is None:
         return 0
 
+    temp = board.copy()
+    temp.turn = color
+
+    king_usi = cshogi.SQUARE_NAMES[king]
+
     count = 0
 
-    for move in board.legal_moves:
+    for move in temp.legal_moves:
         usi = cshogi.move_to_usi(move)
 
-        # 駒打ちは玉の移動ではない。
-        if "*" in usi:
-            continue
-
-        # 通常の移動は4文字。
-        # 例: 7g7f
-        if len(usi) < 4:
-            continue
-
-        from_usi = usi[:2]
-
-        try:
-            from_square = board.move_from_usi(from_usi + usi[2:4])
-        except (ValueError, TypeError):
-            continue
-
-        if from_square == king:
+        # 玉の移動元が現在の玉の位置と一致するものだけを数える。
+        #
+        # 例:
+        #   5i4h
+        #
+        # の場合、usi[:2] == "5i"
+        if len(usi) >= 4 and usi[:2] == king_usi:
             count += 1
 
     return count
@@ -134,7 +128,10 @@ def _legal_defense_score(
     color: int,
 ) -> float:
     """
-    LegalDefenseを計算する。
+    指定した色が持つ合法手数を計算する。
+
+    board.turnに依存しないように、局面のコピーを作成して
+    対象色を手番に設定した上で合法手を調べる。
 
     現段階では、その陣営が持つ合法手数を
     対応可能性の基本的な代理指標とする。
@@ -144,7 +141,10 @@ def _legal_defense_score(
     に限定する。
     """
 
-    return float(legal_move_count(board))
+    temp = board.copy()
+    temp.turn = color
+
+    return float(len(list(temp.legal_moves)))
 
 
 def _counter_attack_score(
