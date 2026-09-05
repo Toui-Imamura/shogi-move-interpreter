@@ -1,0 +1,4 @@
+cshogi>=0.9.5
+numpy>=1.26
+torch>=2.2
+tqdm>=4.66
