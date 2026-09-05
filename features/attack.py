@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple
 
 import cshogi
+from math import isclose
+from typing import Dict
 
 from .activity import (
     BLACK,
@@ -725,4 +727,132 @@ def f20_attackers_change(
         black=black_change,
         white=white_change,
         difference=black_change - white_change,
+    )
+
+# ============================================================
+# F21 攻撃集中度の変化
+# ============================================================
+
+
+@dataclass(frozen=True)
+class F21AttackConcentration:
+    """
+    F21 攻撃集中度の変化。
+
+    各マスに対する攻撃の集中度を評価する。
+
+    concentration =
+        Σ p_x^2
+
+    p_x =
+        Control(x) / Σ Control(y)
+
+    change:
+        after - before
+    """
+
+    before: float
+    after: float
+    change: float
+
+
+def attack_control_distribution(
+    board: cshogi.Board,
+    color: int,
+) -> Dict[int, int]:
+    """
+    各マスに対する指定陣営の利き数を計算する。
+
+    Returns:
+        {
+            square: そのマスを利いている駒の数,
+            ...
+        }
+
+    同じマスを複数の駒が利いている場合は、
+    その駒の数だけ加算する。
+    """
+
+    distribution: Dict[int, int] = {}
+
+    for attacks in all_attacks(board, color).values():
+        for square in attacks:
+            distribution[square] = (
+                distribution.get(square, 0) + 1
+            )
+
+    return distribution
+
+
+def attack_concentration(
+    board: cshogi.Board,
+    color: int,
+) -> float:
+    """
+    指定した陣営の攻撃集中度を計算する。
+
+    各マスへの利き数を全利き数で正規化し、
+    Σp_x^2 を計算する。
+
+    値が大きいほど、少数の地点に攻撃が集中している。
+    """
+
+    distribution = attack_control_distribution(
+        board,
+        color,
+    )
+
+    total_control = sum(distribution.values())
+
+    if total_control == 0:
+        return 0.0
+
+    concentration = 0.0
+
+    for control in distribution.values():
+        p = control / total_control
+        concentration += p * p
+
+    return concentration
+
+
+def f21_attack_concentration(
+    board: cshogi.Board,
+    color: int,
+) -> float:
+    """
+    現局面におけるF21攻撃集中度。
+    """
+
+    return attack_concentration(
+        board,
+        color,
+    )
+
+
+def f21_attack_concentration_change(
+    before: cshogi.Board,
+    after: cshogi.Board,
+    color: int,
+) -> F21AttackConcentration:
+    """
+    F21 攻撃集中度の変化。
+
+    after - before を計算する。
+    """
+
+    before_value = attack_concentration(
+        before,
+        color,
+    )
+
+    after_value = attack_concentration(
+        after,
+        color,
+    )
+
+    return F21AttackConcentration(
+        before=before_value,
+        after=after_value,
+        change=after_value - before_value,
     )

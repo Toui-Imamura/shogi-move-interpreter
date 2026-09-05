@@ -15,8 +15,12 @@ from features.attack import (
     f15_attack_continuity,
     f19_attack_pressure_change,
     f20_attackers_change,
+    f21_attack_concentration,
+    f21_attack_concentration_change,
 )
 from features.transition import make_usi_variation
+
+from features.common import BLACK, WHITE
 
 
 def test_f11_initial_position_is_balanced():
@@ -198,3 +202,35 @@ def test_f20_same_position_has_zero_change():
     assert result.black == 0
     assert result.white == 0
     assert result.difference == 0
+
+
+def test_f21_initial_position_is_symmetric():
+    board = cshogi.Board()
+
+    black = f21_attack_concentration(board, BLACK)
+    white = f21_attack_concentration(board, WHITE)
+
+    assert black == pytest.approx(white)
+
+
+def test_f21_same_position_change_is_zero():
+    board = cshogi.Board()
+
+    result = f21_attack_concentration_change(
+        board,
+        board,
+        BLACK,
+    )
+
+    assert result.change == pytest.approx(0.0)
+
+
+def test_f21_concentration_is_non_negative():
+    board = cshogi.Board()
+
+    value = f21_attack_concentration(
+        board,
+        BLACK,
+    )
+
+    assert value >= 0.0
