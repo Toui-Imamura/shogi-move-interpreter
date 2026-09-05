@@ -2,23 +2,27 @@
 interpreter/mcts_features.py
 
 複数のMCTS探索variationから、
+
 F37: MCTS変化頻度
 F38: MCTS訪問重み付き変化
+F39: 特徴量変化の集中度
+
 を計算する。
 
-各variationは、
+各variation:
 
     S0 -> S1 -> S2 -> ... -> Sv
 
-という探索系列を表す。
+F37/F38では、各variationについて
+S0 -> Sv の特徴量変化を使用する。
 
-F37/F38では、原則として
-S0 -> Sv
-の変化量を使用する。
+F39では、F38で得られた
+訪問重み付き特徴量変化を用いて、
+MCTS全体として変化がどの特徴量に集中しているかを計算する。
 
 注意:
     MCTS訪問回数は「指し手の意図の確率」ではない。
-    あくまで探索結果を集約するための重みとして扱う。
+    探索結果を集約するための重みとして扱う。
 """
 
 from __future__ import annotations
@@ -27,6 +31,10 @@ from dataclasses import dataclass
 from typing import Mapping, Sequence
 
 import cshogi
+
+from features.change_concentration import (
+    compute_feature_change_concentration,
+)
 
 from features.mcts_frequency import (
     F37MCTSChangeFrequency,
@@ -47,7 +55,8 @@ from interpreter.feature_adapters import (
 @dataclass(frozen=True)
 class MCTSFeatureResult:
     """
-    複数のMCTS variationに対するF37/F38の計算結果。
+    複数のMCTS variationに対する
+    F37/F38/F39の計算結果。
     """
 
     variation_deltas: Sequence[Mapping[str, float]]
@@ -55,6 +64,8 @@ class MCTSFeatureResult:
     f37: F37MCTSChangeFrequency
 
     f38: F38VisitWeightedChange
+
+    f39: float
 
 
 def compute_variation_endpoint_deltas(
@@ -65,18 +76,13 @@ def compute_variation_endpoint_deltas(
     1本のvariationについて、
     S0 -> Sv の特徴量変化を計算する。
 
-    F37/F38では各探索系列の最終局面までに
-    どの特徴量が変化したかを扱うため、
-    途中の1手だけではなく最終局面を使用する。
-
     Parameters
     ----------
     initial_board:
         variation開始時の局面。
 
     variation_result:
-        interpreter.variation_features.compute_variation_features()
-        の戻り値。
+        compute_variation_features() の戻り値。
 
     Returns
     -------
@@ -102,11 +108,10 @@ def compute_variation_endpoint_deltas(
     initial = positions[0]
     final = positions[-1]
 
-    # F01〜F33についてS0→Svを計算する。
-    #
-    # moveは渡さない。
-    # ここでは「特定の1手の交換」を評価するのではなく、
-    # variation全体の始点と終点を比較するためである。
+    # --------------------------------------------------
+    # F01〜F33
+    # --------------------------------------------------
+
     endpoint_deltas = compute_f01_f33_deltas(
         initial,
         final,
@@ -117,17 +122,6 @@ def compute_variation_endpoint_deltas(
         for feature_name, delta in endpoint_deltas.items()
     }
 
-    # variation全体から直接計算できる特徴量を追加する。
-    #
-    # F34〜F36は「変化量」そのものではなく、
-    # 戦略方向・整合性・持続性を表すため、
-    # F37/F38のΔFiとしてはここでは扱わない。
-    for feature_name in ("F13", "F15"):
-        if feature_name in variation_result.variation_deltas:
-            result[feature_name] = float(
-                variation_result.variation_deltas[feature_name]
-            )
-
     return result
 
 
@@ -136,7 +130,8 @@ def compute_mcts_features(
     variations,
 ) -> MCTSFeatureResult:
     """
-    複数のMCTS variationからF37/F38を計算する。
+    複数のMCTS variationから
+    F37/F38/F39を計算する。
 
     Parameters
     ----------
@@ -162,7 +157,8 @@ def compute_mcts_features(
     MCTSFeatureResult
         variationごとの特徴量変化、
         F37、
-        F38。
+        F38、
+        F39。
     """
 
     if initial_board is None:
@@ -176,6 +172,7 @@ def compute_mcts_features(
         )
 
     variation_deltas = []
+
     weighted_variations = []
 
     for variation in variations:
@@ -212,18 +209,36 @@ def compute_mcts_features(
             )
         )
 
+    # --------------------------------------------------
     # F37
+    # --------------------------------------------------
+
     f37 = compute_mcts_change_frequency(
         variation_deltas
     )
 
+    # --------------------------------------------------
     # F38
+    # --------------------------------------------------
+
     f38 = compute_visit_weighted_change(
         weighted_variations
+    )
+
+    # --------------------------------------------------
+    # F39
+    #
+    # F38で得られた訪問重み付き変化を、
+    # 特徴量変化ベクトルとして扱う。
+    # --------------------------------------------------
+
+    f39 = compute_feature_change_concentration(
+        f38.weighted_changes
     )
 
     return MCTSFeatureResult(
         variation_deltas=variation_deltas,
         f37=f37,
         f38=f38,
+        f39=float(f39),
     )

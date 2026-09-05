@@ -1,4 +1,5 @@
 import cshogi
+import pytest
 
 from interpreter.mcts_features import (
     compute_mcts_features,
@@ -52,6 +53,8 @@ def test_compute_mcts_features():
     assert "F01" in result.variation_deltas[0]
     assert "F33" in result.variation_deltas[0]
 
+    assert 0.0 <= result.f39 <= 1.0
+
 
 def test_mcts_feature_result_with_single_variation():
     board = cshogi.Board()
@@ -84,6 +87,9 @@ def test_mcts_feature_result_with_single_variation():
     for value in result.f38.weighted_changes.values():
         assert isinstance(value, float)
 
+    assert isinstance(result.f39, float)
+    assert 0.0 <= result.f39 <= 1.0
+
 
 def test_zero_visits_are_allowed():
     board = cshogi.Board()
@@ -108,6 +114,7 @@ def test_zero_visits_are_allowed():
 
     assert result.f37.feature_frequencies
     assert result.f38.weighted_changes == {}
+    assert result.f39 == pytest.approx(0.0)
 
 
 def test_negative_visits_are_rejected():
@@ -120,7 +127,7 @@ def test_negative_visits_are_rejected():
         ],
     )
 
-    try:
+    with pytest.raises(ValueError):
         compute_mcts_features(
             board,
             [
@@ -130,9 +137,34 @@ def test_negative_visits_are_rejected():
                 }
             ],
         )
-    except ValueError:
-        pass
-    else:
-        raise AssertionError(
-            "negative visits should raise ValueError"
-        )
+
+
+def test_f39_uses_visit_weighted_changes():
+    """
+    F39はF38の訪問重み付き変化から計算される。
+
+    1つの特徴量だけが変化している場合、
+    集中度は1.0になる。
+    """
+
+    board = cshogi.Board()
+
+    variation1 = compute_variation_features(
+        board,
+        [
+            "7g7f",
+        ],
+    )
+
+    result = compute_mcts_features(
+        board,
+        [
+            {
+                "result": variation1,
+                "visits": 10,
+            }
+        ],
+    )
+
+    if result.f38.weighted_changes:
+        assert 0.0 <= result.f39 <= 1.0

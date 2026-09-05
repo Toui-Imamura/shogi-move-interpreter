@@ -46,6 +46,14 @@ from .common import (
 )
 from .transition import Variation
 
+PROMOTED_TO_BASE = {
+    cshogi.PROM_PAWN: cshogi.PAWN,
+    cshogi.PROM_LANCE: cshogi.LANCE,
+    cshogi.PROM_KNIGHT: cshogi.KNIGHT,
+    cshogi.PROM_SILVER: cshogi.SILVER,
+    cshogi.PROM_BISHOP: cshogi.BISHOP,
+    cshogi.PROM_ROOK: cshogi.ROOK,
+}
 
 
 
