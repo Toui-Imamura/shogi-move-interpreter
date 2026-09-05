@@ -17,6 +17,8 @@ from features.attack import (
     f20_attackers_change,
     f21_attack_concentration,
     f21_attack_concentration_change,
+    f22_threat_formation,
+    f22_threat_formation_change,
 )
 from features.transition import make_usi_variation
 
@@ -234,3 +236,67 @@ def test_f21_concentration_is_non_negative():
     )
 
     assert value >= 0.0
+
+# ============================================================
+# F22 tests
+# ============================================================
+
+def test_f22_initial_position():
+    board = cshogi.Board()
+
+    black_value = f22_threat_formation(
+        board,
+        BLACK,
+    )
+
+    white_value = f22_threat_formation(
+        board,
+        WHITE,
+    )
+
+    assert black_value >= 0.0
+    assert white_value >= 0.0
+
+
+def test_f22_capture_threat_increases():
+    """
+    7g7f alone should produce a valid F22 value.
+
+    The exact numerical value is intentionally not fixed here,
+    because the threat weights are provisional.
+    """
+    before = cshogi.Board()
+
+    move = before.move_from_usi("7g7f")
+    after = before.copy()
+    after.push(move)
+
+    result = f22_threat_formation_change(
+        before,
+        after,
+        BLACK,
+    )
+
+    assert result.before >= 0.0
+    assert result.after >= 0.0
+    assert (
+        result.change
+        == result.after - result.before
+    )
+
+
+def test_f22_change_is_zero_for_unchanged_position():
+    board = cshogi.Board()
+
+    result = f22_threat_formation_change(
+        board,
+        board,
+        BLACK,
+    )
+
+    assert result.change == 0.0
+    assert result.capture_threat == 0.0
+    assert result.king_threat == 0.0
+    assert result.mate_threat == 0.0
+    assert result.important_piece_threat == 0.0
+    assert result.forcing_defense == 0.0

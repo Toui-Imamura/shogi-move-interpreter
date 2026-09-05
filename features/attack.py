@@ -26,7 +26,6 @@ from typing import Dict, List, Set, Tuple
 
 import cshogi
 from math import isclose
-from typing import Dict
 
 from .activity import (
     BLACK,
@@ -41,13 +40,10 @@ from .activity import (
 )
 from .common import (
     board_material,
+    iter_pieces,
     king_square,
     tanh_normalize,
 )
-from .transition import Variation
-
-from dataclasses import dataclass
-
 from .transition import Variation
 
 
@@ -855,4 +851,296 @@ def f21_attack_concentration_change(
         before=before_value,
         after=after_value,
         change=after_value - before_value,
+    )
+
+
+# ============================================================
+# F22 Threat Formation Change
+# ============================================================
+
+@dataclass(frozen=True)
+class F22ThreatFormation:
+    """
+    F22: 脅威形成の変化
+
+    Threat score is composed of:
+        - capture threats
+        - king threats
+        - mate/checkmate threats
+        - important-piece attacks
+        - forcing-defense proxy
+
+    change = after - before
+    """
+
+    before: float
+    after: float
+    change: float
+
+    capture_threat: float
+    king_threat: float
+    mate_threat: float
+    important_piece_threat: float
+    forcing_defense: float
+
+
+def _piece_value_for_threat(piece: int) -> float:
+    """
+    Return a material value suitable for threat detection.
+
+    Uses the same material-value definition as the basic features.
+    """
+    from .common import PIECE_VALUES, PROMOTED_TO_BASE
+
+    base_piece = PROMOTED_TO_BASE.get(piece, piece)
+    return PIECE_VALUES.get(base_piece, 0.0)
+
+
+def _opponent_color(color: int) -> int:
+    if color == BLACK:
+        return WHITE
+    return BLACK
+
+
+def _attacked_enemy_pieces(board, color):
+    """
+    Return enemy pieces attacked by `color`.
+
+    Returns:
+        list of tuples:
+            (attacker_square, target_square, target_piece, target_value)
+    """
+    enemy = _opponent_color(color)
+    attacks = all_attacks(board, color)
+
+    enemy_pieces = {
+        info.square: info.piece_type
+        for info in iter_pieces(board)
+        if info.color == enemy
+    }
+
+    result = []
+
+    for attacker_square, attacked_squares in attacks.items():
+        for target_square in attacked_squares:
+            if target_square not in enemy_pieces:
+                continue
+
+            target_piece = enemy_pieces[target_square]
+            target_value = _piece_value_for_threat(target_piece)
+
+            result.append(
+                (
+                    attacker_square,
+                    target_square,
+                    target_piece,
+                    target_value,
+                )
+            )
+
+    return result
+
+
+def _capture_threat_score(board, color) -> float:
+    """
+    Score the existence/value of immediately attacked enemy pieces.
+
+    Higher values mean stronger direct capture threats.
+    """
+    attacked = _attacked_enemy_pieces(board, color)
+
+    if not attacked:
+        return 0.0
+
+    # Count each target square only once.
+    targets = {}
+
+    for _, target_square, _, target_value in attacked:
+        targets[target_square] = max(
+            targets.get(target_square, 0.0),
+            target_value,
+        )
+
+    return sum(targets.values())
+
+
+def _king_threat_score(board, color) -> float:
+    """
+    Score attacks directed at the opponent king.
+
+    This is intentionally separate from F11.
+    F22 treats the existence of a direct king threat as a threat
+    indicator rather than as general attack pressure.
+    """
+    enemy = _opponent_color(color)
+    enemy_king = king_square(board, enemy)
+
+    if enemy_king is None:
+        return 0.0
+
+    attacks = all_attacks(board, color)
+
+    for attacked_squares in attacks.values():
+        if enemy_king in attacked_squares:
+            return 1.0
+
+    return 0.0
+
+
+def _mate_threat_score(board, color) -> float:
+    """
+    Detect whether the opponent is currently in checkmate.
+
+    This is deliberately conservative.
+
+    A true future mate threat requires search. At the single-position
+    level, we only recognize an already established checkmate state.
+    """
+    enemy = _opponent_color(color)
+
+    if hasattr(board, "is_checkmate"):
+        try:
+            if board.is_checkmate():
+                return 1.0
+        except TypeError:
+            pass
+
+    return 0.0
+
+
+def _important_piece_threat_score(board, color) -> float:
+    """
+    Score attacks against important enemy pieces.
+
+    Major pieces receive higher weights than minor pieces.
+    """
+    enemy = _opponent_color(color)
+    attacked = _attacked_enemy_pieces(board, color)
+
+    total = 0.0
+
+    for _, _, piece, _ in attacked:
+        if piece_color(piece) != enemy:
+            continue
+
+        base_piece = PROMOTED_TO_BASE.get(piece, piece)
+
+        if base_piece in (cshogi.ROOK, cshogi.BISHOP):
+            total += 2.0
+        elif base_piece in (
+            cshogi.GOLD,
+            cshogi.SILVER,
+            cshogi.KNIGHT,
+            cshogi.LANCE,
+        ):
+            total += 1.0
+
+    return total
+
+
+def _forcing_defense_score(board, color) -> float:
+    """
+    Conservative proxy for forcing defense.
+
+    A position is considered more forcing when the opponent's king
+    is under direct attack or an important enemy piece is attacked.
+
+    This is a proxy, not a full game-tree determination of forced
+    responses.
+    """
+    king_threat = _king_threat_score(board, color)
+    important_threat = _important_piece_threat_score(board, color)
+
+    if king_threat > 0:
+        return 1.0
+
+    if important_threat > 0:
+        return 0.5
+
+    return 0.0
+
+
+def threat_formation_score(board, color) -> float:
+    """
+    Calculate the raw F22 threat-formation score.
+
+    The weights are provisional and should later be learned or
+    experimentally calibrated.
+    """
+    capture_threat = _capture_threat_score(board, color)
+    king_threat = _king_threat_score(board, color)
+    mate_threat = _mate_threat_score(board, color)
+    important_piece_threat = _important_piece_threat_score(
+        board,
+        color,
+    )
+    forcing_defense = _forcing_defense_score(board, color)
+
+    score = (
+        1.0 * capture_threat
+        + 5.0 * king_threat
+        + 10.0 * mate_threat
+        + 2.0 * important_piece_threat
+        + 2.0 * forcing_defense
+    )
+
+    return score
+
+
+def f22_threat_formation(board, color) -> float:
+    """
+    Public F22 feature extractor.
+    """
+    return threat_formation_score(board, color)
+
+
+def f22_threat_formation_change(
+    before,
+    after,
+    color,
+):
+    """
+    Calculate F22 change between two positions.
+    """
+    before_capture = _capture_threat_score(before, color)
+    after_capture = _capture_threat_score(after, color)
+
+    before_king = _king_threat_score(before, color)
+    after_king = _king_threat_score(after, color)
+
+    before_mate = _mate_threat_score(before, color)
+    after_mate = _mate_threat_score(after, color)
+
+    before_important = _important_piece_threat_score(
+        before,
+        color,
+    )
+    after_important = _important_piece_threat_score(
+        after,
+        color,
+    )
+
+    before_forcing = _forcing_defense_score(
+        before,
+        color,
+    )
+    after_forcing = _forcing_defense_score(
+        after,
+        color,
+    )
+
+    before_score = threat_formation_score(before, color)
+    after_score = threat_formation_score(after, color)
+
+    return F22ThreatFormation(
+        before=before_score,
+        after=after_score,
+        change=after_score - before_score,
+        capture_threat=after_capture - before_capture,
+        king_threat=after_king - before_king,
+        mate_threat=after_mate - before_mate,
+        important_piece_threat=(
+            after_important - before_important
+        ),
+        forcing_defense=after_forcing - before_forcing,
     )
