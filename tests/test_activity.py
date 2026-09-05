@@ -141,8 +141,8 @@ def test_f09_initial_position_returns_valid_result():
 
     result = f09_idle_improvement(board, board)
 
-    assert result.black_change == 0
-    assert result.white_change == 0
+    assert result.black_idle == 0
+    assert result.white_idle == 0
 
 
 def test_f10_initial_position_is_balanced():
