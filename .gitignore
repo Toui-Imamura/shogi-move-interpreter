@@ -6,3 +6,11 @@ __pycache__/
 # Generated datasets
 data/processed/*.jsonl
 data/processed/*.json
+
+# Trained NNUE model weights
+models/nnue/*.pt
+models/nnue/*.pth
+models/nnue/*.bin
+
+# Temporary NNUE files
+training/nnue/*.bak
