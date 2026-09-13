@@ -1,4 +1,6 @@
 cshogi>=0.9.5
-numpy>=1.26
+numpy>=1.26.0,<1.27.0
 torch>=2.2
 tqdm>=4.66
+# Numerical computing and training visualization
+matplotlib>=3.8.0
