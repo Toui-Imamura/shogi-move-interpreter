@@ -58,7 +58,6 @@ def test_compute_variation_features():
 
 def test_empty_variation():
     board = cshogi.Board()
-
     result = compute_variation_features(
         board,
         [],
