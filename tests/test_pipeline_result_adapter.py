@@ -171,3 +171,59 @@ def test_pipeline_result_to_vector_preserves_variation_f15():
     assert vector[14] == pytest.approx(
         result.variation.variation_deltas["F15"]
     )
+
+def test_pipeline_result_with_mcts_preserves_f37_to_f39_in_vector():
+    """MCTS由来のF37〜F39が辞書とベクトルへ反映される。"""
+    board = cshogi.Board()
+    move = board.move_from_usi("7g7f")
+
+    variation1 = compute_feature_pipeline(
+        before=board,
+        move=move,
+        variation_moves=[
+            "7g7f",
+            "3c3d",
+            "2g2f",
+        ],
+    ).variation
+
+    variation2 = compute_feature_pipeline(
+        before=board,
+        move=move,
+        variation_moves=[
+            "7g7f",
+            "8c8d",
+            "2g2f",
+        ],
+    ).variation
+
+    result = compute_feature_pipeline(
+        before=board,
+        move=move,
+        mcts_variations=[
+            {
+                "result": variation1,
+                "visits": 10,
+            },
+            {
+                "result": variation2,
+                "visits": 5,
+            },
+        ],
+    )
+
+    values = pipeline_result_to_dict(result)
+    vector = pipeline_result_to_vector(result)
+
+    assert len(values) == 40
+    assert len(vector) == 40
+
+    assert values["F37"] >= 0.0
+    assert values["F38"] >= 0.0
+    assert 0.0 <= values["F39"] <= 1.0
+
+    # F37〜F39はF01始まりで37〜39番目なので、
+    # Pythonのインデックスでは36〜38。
+    assert vector[36] == pytest.approx(values["F37"])
+    assert vector[37] == pytest.approx(values["F38"])
+    assert vector[38] == pytest.approx(values["F39"])
