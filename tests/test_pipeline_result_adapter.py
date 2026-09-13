@@ -122,3 +122,52 @@ def test_pipeline_result_with_mcts():
     assert values["F37"] >= 0.0
     assert values["F38"] >= 0.0
     assert 0.0 <= values["F39"] <= 1.0
+
+
+def test_pipeline_result_to_dict_includes_variation_f13_and_f15():
+    """Variationで計算されたF13・F15を辞書へ反映する。"""
+    board = cshogi.Board()
+    move = board.move_from_usi("7g7f")
+
+    result = compute_feature_pipeline(
+        before=board,
+        move=move,
+        variation_moves=[
+            "7g7f",
+            "3c3d",
+            "2g2f",
+        ],
+    )
+
+    values = pipeline_result_to_dict(result)
+
+    assert len(values) == 40
+    assert values["F13"] == pytest.approx(
+        result.variation.variation_deltas["F13"]
+    )
+    assert values["F15"] == pytest.approx(
+        result.variation.variation_deltas["F15"]
+    )
+
+
+def test_pipeline_result_to_vector_preserves_variation_f15():
+    """固定長ベクトルでもF15の値を保持する。"""
+    board = cshogi.Board()
+    move = board.move_from_usi("7g7f")
+
+    result = compute_feature_pipeline(
+        before=board,
+        move=move,
+        variation_moves=[
+            "7g7f",
+            "3c3d",
+            "2g2f",
+        ],
+    )
+
+    vector = pipeline_result_to_vector(result)
+
+    assert len(vector) == 40
+    assert vector[14] == pytest.approx(
+        result.variation.variation_deltas["F15"]
+    )

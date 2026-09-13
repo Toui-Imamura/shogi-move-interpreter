@@ -75,6 +75,25 @@ def _extract_variation_values(
 
     result: dict[str, float] = {}
 
+    # --------------------------------------------------
+    # F13・F15
+    # --------------------------------------------------
+    # F13: 駒得形成過程
+    # F15: 攻撃継続性
+    #
+    # これらはVariationFeatureResultで計算されるため、
+    # 即時特徴量ではなくVariation側から取得する。
+
+    for name in ("F13", "F15"):
+        if name in variation_deltas:
+            result[name] = float(
+                variation_deltas[name]
+            )
+
+    # --------------------------------------------------
+    # F34〜F36
+    # --------------------------------------------------
+
     for name in ("F35", "F36"):
         if name in variation_deltas:
             result[name] = float(
