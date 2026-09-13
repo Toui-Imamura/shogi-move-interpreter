@@ -283,14 +283,18 @@ def compute_attack_feature_deltas(
 
     result: dict[str, float] = {}
 
-    result["F11"] = _difference_delta(
-        f11_attack_pressure(before),
-        f11_attack_pressure(after),
+    # F11: 現在局面の攻撃圧力
+    f11_before = f11_attack_pressure(before)
+
+    result["F11"] = float(
+    f11_before.difference
     )
 
-    result["F12"] = _difference_delta(
-        f12_attackers(before),
-        f12_attackers(after),
+    # F12: 現在局面の攻撃参加駒数
+    f12_before = f12_attackers(before)
+
+    result["F12"] = float(
+        f12_before.difference
     )
 
     if variation is not None:
@@ -400,9 +404,10 @@ def compute_defense_feature_deltas(
     )
 
     # F26
-    result["F26"] = _difference_delta(
-        f26_king_safety(before),
-        f26_king_safety(after),
+    f26_before = f26_king_safety(before)
+
+    result["F26"] = float(
+        f26_before.difference
     )
 
     # F27

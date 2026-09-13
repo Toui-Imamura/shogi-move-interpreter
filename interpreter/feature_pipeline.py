@@ -354,13 +354,17 @@ def compute_pipeline(
 
     # --------------------------------------------------------
     # 3. 複数MCTS Variation
+    #
+    # MCTSは対象手直後の局面S1から開始する。
+    # S0→S1は即時特徴量で分析済みであるため、
+    # MCTSではS1以降の展開を分析する。
     # --------------------------------------------------------
 
     mcts_result = None
 
     if mcts_variations is not None:
         mcts_result = compute_mcts_features(
-            before,
+            after,
             mcts_variations,
         )
 

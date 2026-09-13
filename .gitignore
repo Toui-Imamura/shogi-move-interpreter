@@ -14,3 +14,11 @@ models/nnue/*.bin
 
 # Temporary NNUE files
 training/nnue/*.bak
+
+# Raw game records and downloaded datasets
+data/raw/
+
+# Backup files
+*.bak
+*.backup
+*~
