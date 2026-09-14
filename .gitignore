@@ -22,3 +22,9 @@ data/raw/
 *.bak
 *.backup
 *~
+
+# Generated feature-weight analysis outputs
+data/processed/feature_weight_dataset_analysis/
+
+# Generated training logs and model artifacts
+data/training_logs/
