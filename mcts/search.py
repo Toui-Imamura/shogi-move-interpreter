@@ -14,6 +14,15 @@ from training.nnue.accumulator import evaluate_board
 class MCTSVariation:
     """
     MCTSによって得られた1本の変化手順。
+
+    moves:
+        ルート局面からの指し手列。
+
+    visits:
+        ルート直下の候補手が訪問された回数。
+
+    value:
+        その候補手ノードに保存されたBlack視点の平均評価値。
     """
 
     moves: list[int]
@@ -24,6 +33,15 @@ class MCTSVariation:
 class SimpleMCTS:
     """
     NNUE評価を利用する簡易MCTS。
+
+    評価値の視点:
+        Black視点に統一する。
+
+        正の値:
+            Black有利
+
+        負の値:
+            White有利
 
     注意:
         現段階では研究用の最小実装であり、
@@ -39,6 +57,11 @@ class SimpleMCTS:
         exploration_constant: float = 1.4,
         device: str = "cpu",
     ):
+        if model is None:
+            raise ValueError(
+                "model must not be None"
+            )
+
         if simulations <= 0:
             raise ValueError(
                 "simulations must be positive"
@@ -65,18 +88,21 @@ class SimpleMCTS:
         self.model.to(self.device)
         self.model.eval()
 
-    def evaluate(self, board: cshogi.Board) -> float:
+    def evaluate(
+        self,
+        board: cshogi.Board,
+    ) -> float:
         """
         局面をNNUEで評価する。
 
-        現在のNNUEはBlack視点の評価値を
-        直接学習する設計であるため、
-        ここでは評価値をそのまま返す。
+        NNUEの出力はBlack視点の評価値として扱う。
         """
 
-        return evaluate_board(
-            board,
-            self.model,
+        return float(
+            evaluate_board(
+                board,
+                self.model,
+            )
         )
 
     def legal_moves(
@@ -121,7 +147,9 @@ class SimpleMCTS:
         if node.children:
             return
 
-        legal_moves = self.legal_moves(node.board)
+        legal_moves = self.legal_moves(
+            node.board
+        )
 
         for move in legal_moves:
             node.children[move] = self.make_child(
@@ -135,6 +163,17 @@ class SimpleMCTS:
     ) -> MCTSNode:
         """
         UCB1によって子ノードを選択する。
+
+        NNUE評価値はBlack視点で統一しているため、
+
+        - Black番:
+            Blackに有利な子を選ぶ
+
+        - White番:
+            Whiteに有利な子、つまり
+            Black評価値が低い子を選ぶ
+
+        とする。
         """
 
         if not node.children:
@@ -142,15 +181,27 @@ class SimpleMCTS:
                 "cannot select child from an unexpanded node"
             )
 
-        parent_visits = max(node.visits, 1)
+        parent_visits = max(
+            node.visits,
+            1,
+        )
 
-        def score(child: MCTSNode) -> float:
-            exploitation = child.mean_value
+        log_parent_visits = math.log(
+            parent_visits + 1.0
+        )
+
+        def score(
+            child: MCTSNode,
+        ) -> float:
+            if node.board.turn == cshogi.BLACK:
+                exploitation = child.mean_value
+            else:
+                exploitation = -child.mean_value
 
             exploration = (
                 self.exploration_constant
                 * math.sqrt(
-                    math.log(parent_visits + 1.0)
+                    log_parent_visits
                     / (child.visits + 1.0)
                 )
             )
@@ -200,16 +251,15 @@ class SimpleMCTS:
         評価値を経路上のノードへ逆伝播する。
 
         評価値はBlack視点で統一する。
-        White手番のノードでは符号を反転する。
+
+        そのため、各ノードには符号反転せず、
+        同じBlack視点の評価値を加算する。
         """
 
+        value = float(value)
+
         for node in reversed(path):
-            node_value = value
-
-            if node.board.turn == cshogi.WHITE:
-                node_value = -value
-
-            node.update(node_value)
+            node.update(value)
 
     def run_simulation(
         self,
@@ -224,7 +274,9 @@ class SimpleMCTS:
         if leaf.board.legal_moves:
             self.expand(leaf)
 
-        value = self.evaluate(leaf.board)
+        value = self.evaluate(
+            leaf.board
+        )
 
         self.backup(
             path,
@@ -269,8 +321,16 @@ class SimpleMCTS:
         1本の代表変化手順を抽出する。
         """
 
+        if root is None:
+            raise ValueError(
+                "root must not be None"
+            )
+
         if max_depth is None:
             max_depth = self.max_depth
+
+        if max_depth <= 0:
+            return []
 
         moves: list[int] = []
         node = root
@@ -302,9 +362,16 @@ class SimpleMCTS:
         ルート直下の訪問回数上位手から、
         複数の変化手順を生成する。
 
-        現段階では、各候補手を起点に
+        各候補手を起点に、
         その後は訪問回数最大の手を選ぶ。
+
+        visitsは、F37/F38の集約に利用する。
         """
+
+        if root is None:
+            raise ValueError(
+                "root must not be None"
+            )
 
         if num_variations <= 0:
             raise ValueError(
@@ -313,6 +380,9 @@ class SimpleMCTS:
 
         if max_depth is None:
             max_depth = self.max_depth
+
+        if max_depth <= 0:
+            return []
 
         children = sorted(
             root.children.values(),
@@ -347,8 +417,8 @@ class SimpleMCTS:
             variations.append(
                 MCTSVariation(
                     moves=moves,
-                    visits=child.visits,
-                    value=child.mean_value,
+                    visits=int(child.visits),
+                    value=float(child.mean_value),
                 )
             )
 

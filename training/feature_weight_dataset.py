@@ -144,27 +144,35 @@ def _extract_target(
     """
     教師値を取り出す。
 
-    teacher_delta_mover_cpを使用する。
+    優先順位:
+    1. teacher_delta_black_cp
+    2. teacher_delta_mover_cp
 
-    正の値:
-        指し手を指した側から見て評価が改善。
+    teacher_delta_black_cp:
+        Black視点の評価差分。
 
-    負の値:
-        指し手を指した側から見て評価が悪化。
+    teacher_delta_mover_cp:
+        指し手を実行した側から見た評価差分。
+
+    注意:
+        teacher_delta_mover_cpを使用する場合、
+        学習全体で視点の定義を統一する必要がある。
     """
 
-    value = teacher_record.get(
-        "teacher_delta_mover_cp"
+    black_value = teacher_record.get("teacher_delta_black_cp")
+    if black_value is not None:
+        return float(black_value)
+
+    mover_value = teacher_record.get("teacher_delta_mover_cp")
+    if mover_value is not None:
+        return float(mover_value)
+
+    raise ValueError(
+        "教師値が存在しません。"
+        "teacher_delta_black_cp または "
+        "teacher_delta_mover_cp が必要です: "
+        f"key={_make_join_key(teacher_record)}"
     )
-
-    if value is None:
-        raise ValueError(
-            "teacher_delta_mover_cpが存在しません: "
-            f"key={_make_join_key(teacher_record)}"
-        )
-
-    return float(value)
-
 
 def _extract_features(
     feature_record: dict[str, Any],
