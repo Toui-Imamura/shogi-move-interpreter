@@ -173,13 +173,11 @@ def describe_move(
     from_square = move_usi[:2]
     to_square = move_usi[2:4]
 
-    from_file = int(from_square[0])
-    from_rank = from_square[1]
-
-    from_square_index = (
-        (ord(from_rank) - ord("a")) * 9
-        + (9 - from_file)
-    )
+    # cshogi 1.0.4が保持しているmove情報から
+    # 移動元の内部square番号を取得する。
+    #
+    # USI座標から内部square番号を自前計算しない。
+    from_square_index = cshogi.move_from(move)
 
     piece_name = _piece_name_from_square(
         board,
