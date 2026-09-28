@@ -83,7 +83,7 @@ def extract_both_perspectives(
 
 
 KING_SQUARES = 81
-PIECE_TYPES = 16
+PIECE_TYPES = 31
 BOARD_SQUARES = 81
 
 
