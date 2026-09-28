@@ -196,8 +196,172 @@ def describe_move(
 
 
 # ============================================================
+# Position transition description
+# ============================================================
+
+
+def _same_position(
+    left: cshogi.Board,
+    right: cshogi.Board,
+) -> bool:
+    """
+    2局面の盤面と持ち駒が一致しているか確認する。
+
+    cshogi 1.0.4で確認済みの
+    Board.pieces / Board.pieces_in_hand のみを使用する。
+    """
+
+    return (
+        list(left.pieces) == list(right.pieces)
+        and list(left.pieces_in_hand)
+        == list(right.pieces_in_hand)
+    )
+
+
+def find_transition_move(
+    before: cshogi.Board,
+    after: cshogi.Board,
+) -> int:
+    """
+    beforeからafterへ遷移する実際の指し手を復元する。
+
+    beforeの合法手を順番に適用し、
+    resulting positionがafterと一致する手を探す。
+
+    Returns
+    -------
+    int
+        cshogiのmove。
+
+    Raises
+    ------
+    ValueError
+        対応する合法手が見つからない場合。
+    """
+
+    if before is None:
+        raise ValueError(
+            "before must not be None"
+        )
+
+    if after is None:
+        raise ValueError(
+            "after must not be None"
+        )
+
+    for move in before.legal_moves:
+        candidate = before.copy()
+        candidate.push(move)
+
+        if _same_position(candidate, after):
+            return move
+
+    raise ValueError(
+        "could not determine transition move"
+    )
+
+
+def extract_position_changes(
+    before: cshogi.Board,
+    after: cshogi.Board,
+) -> list[MoveDescription]:
+    """
+    2局面間の具体的な指し手を取得する。
+
+    例:
+        7g7f
+        -> MoveDescription(
+            move_usi="7g7f",
+            piece_name="歩",
+            from_square="7g",
+            to_square="7f",
+            is_drop=False,
+        )
+
+    駒打ちにも対応する。
+    """
+
+    move = find_transition_move(
+        before,
+        after,
+    )
+
+    return [
+        describe_move(
+            before,
+            move,
+        )
+    ]
+
+
+def extract_variation_moves(
+    positions: Sequence[cshogi.Board],
+) -> list[MoveDescription]:
+    """
+    MCTS variationのS0〜Svから、
+    各遷移で実際に指された手を復元する。
+
+    Parameters
+    ----------
+    positions:
+        VariationFeatureResult.positions。
+        S0〜Svの局面列。
+
+    Returns
+    -------
+    list[MoveDescription]
+        各遷移の具体的な指し手。
+    """
+
+    if positions is None:
+        raise ValueError(
+            "positions must not be None"
+        )
+
+    positions = list(positions)
+
+    if len(positions) <= 1:
+        return []
+
+    changes: list[MoveDescription] = []
+
+    for index in range(len(positions) - 1):
+        before = positions[index]
+        after = positions[index + 1]
+
+        changes.extend(
+            extract_position_changes(
+                before,
+                after,
+            )
+        )
+
+    return changes
+
+
+# ============================================================
 # MCTS common changes
 # ============================================================
+
+
+@dataclass(frozen=True)
+class MCTSVariationDescription:
+    """MCTSで得られた1本のvariationを具体的な指し手列として表す。"""
+
+    variation_index: int
+    visits: int
+    moves: list[MoveDescription]
+
+
+@dataclass(frozen=True)
+class FeatureTransitionEvidence:
+    """ある特徴量の変化と、それに対応するvariation内の指し手。"""
+
+    feature_name: str
+    variation_index: int
+    move_index: int
+    move: MoveDescription
+    change: float
 
 
 @dataclass(frozen=True)
@@ -208,6 +372,165 @@ class MCTSChange:
 
     feature_name: str
     change: float
+
+
+def describe_mcts_variations(
+    pipeline_result,
+) -> list[MCTSVariationDescription]:
+    """MCTS variationを具体的な指し手列へ変換する。"""
+
+    if pipeline_result is None:
+        raise ValueError(
+            "pipeline_result must not be None"
+        )
+
+    mcts = pipeline_result.mcts
+
+    if mcts is None:
+        return []
+
+    descriptions = []
+
+    for variation_index, variation_result in enumerate(
+        mcts.variation_results
+    ):
+        positions = list(variation_result.positions)
+
+        if len(positions) <= 1:
+            moves = []
+        else:
+            moves = extract_variation_moves(positions)
+
+        # compute_mcts_features() に渡したvariationの訪問回数は
+        # variation_result自身には保持されていないため、
+        # 現時点では0を設定する。
+        #
+        # 訪問回数を表示する必要がある場合は、
+        # 後ほどMCTSVariationにもvariation resultを対応付ける。
+        visits = mcts.variation_visits[
+            variation_index
+        ]
+
+        descriptions.append(
+            MCTSVariationDescription(
+                variation_index=variation_index,
+                visits=visits,
+                moves=moves,
+            )
+        )
+
+    return descriptions
+
+
+def extract_feature_transition_evidence(
+    pipeline_result,
+    feature_name: str,
+    threshold: float = 0.05,
+) -> list[FeatureTransitionEvidence]:
+    """
+    MCTS variation内の各遷移について、
+    指定した特徴量の変化と具体的な指し手を対応付ける。
+
+    Parameters
+    ----------
+    pipeline_result:
+        compute_pipeline() の戻り値。
+
+    feature_name:
+        対応付けたい特徴量名。
+        例: "F07"
+
+    threshold:
+        絶対値がこの値未満の変化は除外する。
+
+    Returns
+    -------
+    list[FeatureTransitionEvidence]
+        特徴量変化が大きかった遷移。
+    """
+
+    if pipeline_result is None:
+        raise ValueError(
+            "pipeline_result must not be None"
+        )
+
+    if not feature_name:
+        raise ValueError(
+            "feature_name must not be empty"
+        )
+
+    if threshold < 0:
+        raise ValueError(
+            "threshold must be non-negative"
+        )
+
+    mcts = pipeline_result.mcts
+
+    if mcts is None:
+        return []
+
+    evidence = []
+
+    for variation_index, variation_result in enumerate(
+        mcts.variation_results
+    ):
+        positions = list(
+            variation_result.positions
+        )
+
+        transition_deltas = list(
+            variation_result.transition_deltas
+        )
+
+        if len(positions) <= 1:
+            continue
+
+        expected_transitions = len(positions) - 1
+
+        if len(transition_deltas) != expected_transitions:
+            raise ValueError(
+                "transition_deltas and positions have "
+                "inconsistent lengths"
+            )
+
+        moves = extract_variation_moves(
+            positions
+        )
+
+        if len(moves) != len(transition_deltas):
+            raise ValueError(
+                "move count and transition count do not match"
+            )
+
+        for move_index, (move, delta) in enumerate(
+            zip(moves, transition_deltas)
+        ):
+            change = float(
+                delta.get(
+                    feature_name,
+                    0.0,
+                )
+            )
+
+            if abs(change) < threshold:
+                continue
+
+            evidence.append(
+                FeatureTransitionEvidence(
+                    feature_name=feature_name,
+                    variation_index=variation_index,
+                    move_index=move_index,
+                    move=move,
+                    change=change,
+                )
+            )
+
+    evidence.sort(
+        key=lambda item: abs(item.change),
+        reverse=True,
+    )
+
+    return evidence
 
 
 def extract_mcts_changes(

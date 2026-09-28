@@ -61,6 +61,10 @@ class MCTSFeatureResult:
 
     variation_deltas: Sequence[Mapping[str, float]]
 
+    variation_results: Sequence[object]
+
+    variation_visits: Sequence[int]
+
     f37: F37MCTSChangeFrequency
 
     f38: F38VisitWeightedChange
@@ -173,6 +177,10 @@ def compute_mcts_features(
 
     variation_deltas = []
 
+    variation_results = []
+
+    variation_visits = []
+
     weighted_variations = []
 
     for variation in variations:
@@ -194,6 +202,9 @@ def compute_mcts_features(
             )
 
         result = variation["result"]
+
+        variation_results.append(result)
+        variation_visits.append(int(visits))
 
         deltas = compute_variation_endpoint_deltas(
             initial_board,
@@ -238,6 +249,8 @@ def compute_mcts_features(
 
     return MCTSFeatureResult(
         variation_deltas=variation_deltas,
+        variation_results=variation_results,
+        variation_visits=variation_visits,
         f37=f37,
         f38=f38,
         f39=float(f39),
