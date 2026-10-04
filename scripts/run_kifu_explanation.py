@@ -9,7 +9,6 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import cshogi
-import torch
 
 from interpreter.explainer import explain_move
 from interpreter.mcts_explanation import (
@@ -23,8 +22,7 @@ from mcts.variation import (
     convert_variations,
     to_mcts_feature_inputs,
 )
-from training.nnue.features import num_feature_ids
-from training.nnue.network import NNUE
+from mcts.yaneuraou_evaluator import YaneuraOuMCTSEvaluator
 
 
 CSA_MOVE_PATTERN = re.compile(r"^([+-])(\d{4}[A-Z]{2})")
@@ -98,42 +96,68 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--mcts-device",
-        type=str,
-        default="cpu",
-        help="Device used by NNUE/MCTS, e.g. cpu or cuda.",
+        "--yaneuraou-engine",
+        type=Path,
+        default=Path(
+            "/workspace/YaneuraOu/source/YaneuraOu-by-gcc"
+        ),
+        help="Path to the YaneuraOu executable.",
+    )
+
+    parser.add_argument(
+        "--yaneuraou-eval-dir",
+        type=Path,
+        default=Path(
+            "/workspace/YaneuraOu/source/eval"
+        ),
+        help="Directory containing YaneuraOu NNUE evaluation files.",
+    )
+
+    parser.add_argument(
+        "--yaneuraou-depth",
+        type=int,
+        default=8,
+        help="YaneuraOu search depth used for each MCTS evaluation.",
+    )
+
+    parser.add_argument(
+        "--yaneuraou-threads",
+        type=int,
+        default=1,
+        help="Number of YaneuraOu search threads.",
+    )
+
+    parser.add_argument(
+        "--yaneuraou-hash",
+        type=int,
+        default=256,
+        help="YaneuraOu hash size in MB.",
+    )
+
+    parser.add_argument(
+        "--yaneuraou-timeout",
+        type=int,
+        default=60,
+        help="Timeout in seconds for a YaneuraOu evaluation.",
     )
 
     return parser.parse_args()
 
 
-def create_mcts_model() -> NNUE:
-    """
-    現段階ではMCTS接続確認用に
-    ランダム初期化されたNNUEを生成する。
-
-    学習済みNNUEが完成した段階で、
-    チェックポイント読み込みへ変更する。
-    """
-
-    torch.manual_seed(0)
-
-    return NNUE(
-        num_features=num_feature_ids(),
-        accumulator_size=256,
-        hidden_size=32,
-    )
-
-
 def create_mcts_searcher(
     *,
+    evaluator: YaneuraOuMCTSEvaluator,
     simulations: int,
     max_depth: int,
-    device: str,
 ) -> SimpleMCTS:
     """
-    MCTS検索器を生成する。
+    YaneuraOuを評価器として利用するMCTS検索器を生成する。
     """
+
+    if evaluator is None:
+        raise ValueError(
+            "evaluator must not be None"
+        )
 
     if simulations <= 0:
         raise ValueError(
@@ -145,16 +169,12 @@ def create_mcts_searcher(
             "--mcts-depth must be positive"
         )
 
-    model = create_mcts_model()
-
     return SimpleMCTS(
-        model=model,
+        evaluator=evaluator,
         simulations=simulations,
         max_depth=max_depth,
         exploration_constant=1.4,
-        device=device,
     )
-
 
 def load_csa_moves(
     csa_path: Path,
@@ -193,7 +213,7 @@ def build_mcts_result(
     simulations: int,
     max_depth: int,
     num_variations: int,
-    device: str,
+    evaluator: YaneuraOuMCTSEvaluator,
 ):
     """
     実際の指し手後の局面からMCTSを実行し、
@@ -212,9 +232,9 @@ def build_mcts_result(
     after.push(move)
 
     searcher = create_mcts_searcher(
+        evaluator=evaluator,
         simulations=simulations,
         max_depth=max_depth,
-        device=device,
     )
 
     search_root = searcher.search(
@@ -718,6 +738,30 @@ def main() -> None:
 
     board = cshogi.Board()
 
+    yaneuraou_evaluator = None
+
+    if args.mcts:
+        if not args.yaneuraou_engine.exists():
+            raise FileNotFoundError(
+                "YaneuraOu engine not found: "
+                f"{args.yaneuraou_engine}"
+            )
+
+        if not args.yaneuraou_eval_dir.exists():
+            raise FileNotFoundError(
+                "YaneuraOu eval directory not found: "
+                f"{args.yaneuraou_eval_dir}"
+            )
+
+        yaneuraou_evaluator = YaneuraOuMCTSEvaluator(
+            engine_path=str(args.yaneuraou_engine),
+            eval_dir=str(args.yaneuraou_eval_dir),
+            depth=args.yaneuraou_depth,
+            threads=args.yaneuraou_threads,
+            hash_mb=args.yaneuraou_hash,
+            timeout=args.yaneuraou_timeout,
+        )
+
     results: list[
         dict[str, object]
     ] = []
@@ -782,7 +826,7 @@ def main() -> None:
                 simulations=args.mcts_simulations,
                 max_depth=args.mcts_depth,
                 num_variations=args.mcts_variations,
-                device=args.mcts_device,
+                evaluator=yaneuraou_evaluator,
             )
 
             mcts_explanation = explain_with_mcts(
@@ -897,6 +941,9 @@ def main() -> None:
             f"{args.start_ply}-"
             f"{args.start_ply + len(results) - 1})."
         )
+
+    if yaneuraou_evaluator is not None:
+        yaneuraou_evaluator.close()
 
 
 if __name__ == "__main__":

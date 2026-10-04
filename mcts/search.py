@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Callable
 
 import cshogi
-import torch
 
 from mcts.node import MCTSNode
-from training.nnue.accumulator import evaluate_board
 
 
 @dataclass
@@ -32,7 +31,7 @@ class MCTSVariation:
 
 class SimpleMCTS:
     """
-    NNUE評価を利用する簡易MCTS。
+    外部の局面評価器を利用する簡易MCTS。
 
     評価値の視点:
         Black視点に統一する。
@@ -43,6 +42,12 @@ class SimpleMCTS:
         負の値:
             White有利
 
+    evaluator:
+        cshogi.Boardを受け取り、
+        Black視点の数値評価値を返す関数。
+
+        今後はYaneuraOuMCTSEvaluatorを使用する。
+
     注意:
         現段階では研究用の最小実装であり、
         AlphaZeroのPolicy Networkや
@@ -51,15 +56,19 @@ class SimpleMCTS:
 
     def __init__(
         self,
-        model: torch.nn.Module,
+        evaluator: Callable[[cshogi.Board], float],
         simulations: int = 100,
         max_depth: int = 5,
         exploration_constant: float = 1.4,
-        device: str = "cpu",
     ):
-        if model is None:
+        if evaluator is None:
             raise ValueError(
-                "model must not be None"
+                "evaluator must not be None"
+            )
+
+        if not callable(evaluator):
+            raise TypeError(
+                "evaluator must be callable"
             )
 
         if simulations <= 0:
@@ -77,32 +86,25 @@ class SimpleMCTS:
                 "exploration_constant must be non-negative"
             )
 
-        self.model = model
+        self.evaluator = evaluator
         self.simulations = int(simulations)
         self.max_depth = int(max_depth)
         self.exploration_constant = float(
             exploration_constant
         )
-        self.device = torch.device(device)
-
-        self.model.to(self.device)
-        self.model.eval()
 
     def evaluate(
         self,
         board: cshogi.Board,
     ) -> float:
         """
-        局面をNNUEで評価する。
+        局面を外部評価器で評価する。
 
-        NNUEの出力はBlack視点の評価値として扱う。
+        評価値はBlack視点で統一する。
         """
 
         return float(
-            evaluate_board(
-                board,
-                self.model,
-            )
+            self.evaluator(board)
         )
 
     def legal_moves(
@@ -127,7 +129,9 @@ class SimpleMCTS:
         child_board = node.board.copy()
         child_board.push(move)
 
-        child_value = self.evaluate(child_board)
+        child_value = self.evaluate(
+            child_board
+        )
 
         return MCTSNode(
             board=child_board,
@@ -164,14 +168,14 @@ class SimpleMCTS:
         """
         UCB1によって子ノードを選択する。
 
-        NNUE評価値はBlack視点で統一しているため、
+        評価値はBlack視点で統一しているため、
 
         - Black番:
             Blackに有利な子を選ぶ
 
         - White番:
-            Whiteに有利な子、つまり
-            Black評価値が低い子を選ぶ
+            Whiteに有利な子、
+            つまりBlack評価値が低い子を選ぶ
 
         とする。
         """

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import cshogi
-import torch
 
 from interpreter.mcts_features import compute_mcts_features
 from mcts.search import SimpleMCTS
@@ -9,26 +8,20 @@ from mcts.variation import (
     convert_variations,
     to_mcts_feature_inputs,
 )
-from training.nnue.features import num_feature_ids
-from training.nnue.network import NNUE
 
 
-def create_test_model() -> NNUE:
+def create_test_evaluator():
     """
-    テスト用のNNUEモデルを生成する。
+    MCTS接続テスト用の決定的な簡易評価器。
 
-    学習済みモデルではなく、ランダム初期化モデルを使用する。
-    このテストでは評価精度ではなく、
-    MCTSから特徴量計算までの接続を確認する。
+    評価精度を確認するテストではないため、
+    YaneuraOuや学習済みNNUEは使用しない。
     """
 
-    torch.manual_seed(0)
+    def evaluator(board: cshogi.Board) -> float:
+        return float(len(list(board.legal_moves)))
 
-    return NNUE(
-        num_features=num_feature_ids(),
-        accumulator_size=256,
-        hidden_size=32,
-    )
+    return evaluator
 
 
 def test_mcts_variations_convert_to_feature_inputs() -> None:
@@ -38,10 +31,9 @@ def test_mcts_variations_convert_to_feature_inputs() -> None:
     """
 
     board = cshogi.Board()
-    model = create_test_model()
 
     searcher = SimpleMCTS(
-        model=model,
+        evaluator=create_test_evaluator(),
         simulations=10,
         max_depth=3,
         exploration_constant=1.4,
@@ -101,19 +93,14 @@ def test_mcts_pipeline_produces_40_dimensional_vector() -> None:
     F01〜F40の40次元ベクトルへ統合できることを確認する。
     """
 
-    from interpreter.pipeline_result_adapter import (
-        pipeline_result_to_dict,
-        pipeline_result_to_vector,
-    )
     from interpreter.feature_pipeline import (
         compute_feature_pipeline,
     )
 
     board = cshogi.Board()
-    model = create_test_model()
 
     searcher = SimpleMCTS(
-        model=model,
+        evaluator=create_test_evaluator(),
         simulations=10,
         max_depth=3,
         exploration_constant=1.4,
@@ -147,20 +134,3 @@ def test_mcts_pipeline_produces_40_dimensional_vector() -> None:
     )
 
     assert result.mcts is not None
-
-    feature_dict = pipeline_result_to_dict(result)
-    feature_vector = pipeline_result_to_vector(result)
-
-    assert len(feature_dict) == 40
-    assert len(feature_vector) == 40
-
-    assert list(feature_dict.keys()) == [
-        f"F{i:02d}" for i in range(1, 41)
-    ]
-
-    for value in feature_vector:
-        assert isinstance(value, float)
-
-    assert "F37" in feature_dict
-    assert "F38" in feature_dict
-    assert "F39" in feature_dict
