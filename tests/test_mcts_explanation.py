@@ -6,6 +6,7 @@ from interpreter.feature_pipeline import (
 from interpreter.mcts_explanation import (
     describe_move,
     extract_mcts_changes,
+    extract_concrete_mcts_evidence,
 )
 
 
@@ -266,3 +267,112 @@ def test_extract_feature_transition_evidence():
         assert item.move_index >= 0
         assert isinstance(item.move.move_usi, str)
         assert isinstance(item.change, float)
+
+
+def test_extract_concrete_mcts_evidence():
+    """
+    複数のMCTS variationに共通する具体的な後続手を
+    抽出できることを確認する。
+    """
+
+    from interpreter.feature_pipeline import (
+        compute_pipeline,
+    )
+    from interpreter.variation_features import (
+        compute_variation_features,
+    )
+
+    board = cshogi.Board()
+
+    target_move = board.move_from_usi(
+        "7g7f"
+    )
+
+    variation1 = compute_variation_features(
+        board,
+        [
+            "7g7f",
+            "1c1d",
+            "1g1f",
+        ],
+    )
+
+    variation2 = compute_variation_features(
+        board,
+        [
+            "7g7f",
+            "2c2d",
+            "1g1f",
+        ],
+    )
+
+    variation3 = compute_variation_features(
+        board,
+        [
+            "7g7f",
+            "3c3d",
+            "1g1f",
+        ],
+    )
+
+    pipeline_result = compute_pipeline(
+        before=board,
+        move=target_move,
+        mcts_variations=[
+            {
+                "result": variation1,
+                "visits": 5,
+            },
+            {
+                "result": variation2,
+                "visits": 3,
+            },
+            {
+                "result": variation3,
+                "visits": 2,
+            },
+        ],
+    )
+
+    evidence = extract_concrete_mcts_evidence(
+        board,
+        target_move,
+        pipeline_result,
+    )
+
+    assert len(evidence) >= 1
+
+    first = evidence[0]
+
+    assert first.move.move_usi == "1g1f"
+    assert first.move.piece_name == "歩"
+    assert first.move.from_square == "1g"
+    assert first.move.to_square == "1f"
+    assert first.variation_count == 3
+    assert first.total_visits == 10
+    assert first.variation_indices == (
+        0,
+        1,
+        2,
+    )
+
+
+def test_extract_concrete_mcts_evidence_without_mcts():
+    board = cshogi.Board()
+
+    move = board.move_from_usi(
+        "7g7f"
+    )
+
+    pipeline_result = compute_feature_pipeline(
+        board,
+        move,
+    )
+
+    evidence = extract_concrete_mcts_evidence(
+        board,
+        move,
+        pipeline_result,
+    )
+
+    assert evidence == []

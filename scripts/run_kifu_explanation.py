@@ -10,6 +10,17 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import cshogi
 
+from features.square_importance import (
+    changed_square_effects,
+    top_important_squares,
+)
+from interpreter.mcts_square_importance import (
+    analyze_pipeline_square_importance,
+)
+from interpreter.square_strategy_change import (
+    compare_square_strategy,
+)
+
 from interpreter.explainer import explain_move
 from interpreter.mcts_explanation import (
     describe_mcts_variations,
@@ -394,6 +405,213 @@ def serialize_mcts_data(
         "concentration": float(mcts.f39),
         "evidence": evidence_by_feature,
     }
+
+
+
+def serialize_square_analysis(
+    *,
+    before,
+    after,
+    mover_color: int,
+    pipeline_result=None,
+) -> dict[str, object]:
+    """指し手前後の重要地点分析をJSON用に変換する。"""
+
+    def serialize_effect(effect) -> dict[str, object]:
+        return {
+            "square": int(effect.square),
+            "usi": effect.usi,
+            "piece": int(effect.piece),
+            "black_attackers": int(effect.black_attackers),
+            "white_attackers": int(effect.white_attackers),
+            "black_controls": int(effect.black_controls),
+            "white_controls": int(effect.white_controls),
+            "contested": bool(effect.contested),
+            "importance": float(effect.importance),
+        }
+
+    before_top = top_important_squares(
+        before, top_n=10, include_occupied=True
+    )
+    after_top = top_important_squares(
+        after, top_n=10, include_occupied=True
+    )
+
+    effect_changes = changed_square_effects(before, after)
+    immediate_changes = []
+
+    for old, new in effect_changes:
+        change_types = []
+
+        if old.piece != new.piece:
+            change_types.append("piece_placement")
+
+        if (
+            old.black_attackers != new.black_attackers
+            or old.white_attackers != new.white_attackers
+        ):
+            change_types.append("control_change")
+
+        if old.contested != new.contested:
+            change_types.append("contested_change")
+
+        if old.importance != new.importance:
+            change_types.append("importance_change")
+
+        immediate_changes.append({
+            "square": int(new.square),
+            "usi": new.usi,
+            "change_types": change_types,
+            "before": serialize_effect(old),
+            "after": serialize_effect(new),
+            "importance_delta": float(
+                new.importance - old.importance
+            ),
+            "black_attackers_delta": int(
+                new.black_attackers - old.black_attackers
+            ),
+            "white_attackers_delta": int(
+                new.white_attackers - old.white_attackers
+            ),
+            "contested_before": bool(old.contested),
+            "contested_after": bool(new.contested),
+        })
+
+    immediate_changes.sort(
+        key=lambda item: (
+            abs(item["importance_delta"]),
+            abs(item["black_attackers_delta"])
+            + abs(item["white_attackers_delta"]),
+        ),
+        reverse=True,
+    )
+
+    strategy_changes = compare_square_strategy(
+        before,
+        after,
+        mover_color,
+        top_n=8,
+    )
+
+    serialized_strategy = [
+        {
+            "square": int(item.square),
+            "usi": item.usi,
+            "kind": item.kind,
+            "before_score": float(item.before_score),
+            "after_score": float(item.after_score),
+            "delta": float(item.delta),
+            "status": item.status,
+            "before_reasons": list(item.before_reasons),
+            "after_reasons": list(item.after_reasons),
+        }
+        for item in strategy_changes
+    ]
+
+    mcts_square_data = None
+
+    if (
+        pipeline_result is not None
+        and getattr(pipeline_result, "mcts", None) is not None
+    ):
+        mcts_result = analyze_pipeline_square_importance(
+            pipeline_result
+        )
+        aggregated = sorted(
+            mcts_result.aggregated,
+            key=lambda item: abs(item.weighted_delta),
+            reverse=True,
+        )
+
+        mcts_square_data = {
+            "aggregation_note": (
+                "訪問回数は変化を集約するための重みであり、"
+                "指し手の意図や正しさの確率ではない"
+            ),
+            "aggregated": [
+                {
+                    "square": int(item.square),
+                    "usi": item.usi,
+                    "variation_count": int(item.variation_count),
+                    "total_visits": int(item.total_visits),
+                    "weighted_delta": float(item.weighted_delta),
+                    "mean_delta": float(item.mean_delta),
+                    "increase_count": int(item.increase_count),
+                    "decrease_count": int(item.decrease_count),
+                }
+                for item in aggregated[:10]
+            ],
+        }
+
+    return {
+        "important_squares_before": [
+            serialize_effect(item) for item in before_top
+        ],
+        "important_squares_after": [
+            serialize_effect(item) for item in after_top
+        ],
+        "immediate_changes": immediate_changes[:15],
+        "strategy_changes": serialized_strategy,
+        "mcts": mcts_square_data,
+    }
+
+
+def summarize_square_analysis(
+    square_analysis: dict[str, object],
+) -> str:
+    """
+    重要地点の候補評価変化を、意図を断定せずに短く要約する。
+
+    候補の出現・消失だけを指し手の意図とみなさず、
+    評価差を観測結果として記述する。
+    """
+
+    kind_names = {
+        "attack_target": "攻撃対象",
+        "attack_base": "攻めの拠点",
+        "defense_piece": "守備対象の味方駒",
+        "defense_point": "守備候補地点",
+    }
+
+    parts = []
+    strategy = square_analysis.get("strategy_changes", [])
+
+    # 評価差の大きい候補から、変化が一定以上のものを1件だけ使う。
+    # 評価値は暫定ヒューリスティックであり、勝率や意図の確率ではない。
+    for item in strategy:
+        delta = float(item.get("delta", 0.0))
+        if abs(delta) < 1.0:
+            continue
+
+        kind = kind_names.get(item.get("kind"), item.get("kind", "候補"))
+        direction = "上昇" if delta > 0 else "低下"
+        before_score = float(item.get("before_score", 0.0))
+        after_score = float(item.get("after_score", 0.0))
+
+        parts.append(
+            f"{item['usi']}の{kind}の候補評価が{direction}"
+            f"した（{before_score:.2f}→{after_score:.2f}）"
+        )
+        break
+
+    mcts_data = square_analysis.get("mcts")
+    if mcts_data is not None:
+        aggregated = mcts_data.get("aggregated", [])
+        if aggregated:
+            item = aggregated[0]
+            parts.append(
+                f"MCTSの集約結果では{item['usi']}の重要度変化が大きい"
+            )
+
+    if not parts:
+        return ""
+
+    return (
+        "重要地点分析（候補評価の変化）: "
+        + "。".join(parts)
+        + "。なお、これは評価上の変化を示すもので、"
+        "指し手の意図を直接確定するものではない。"
+    )
 
 
 def print_compact_result(
@@ -835,6 +1053,20 @@ def main() -> None:
                 pipeline_result=mcts_pipeline_result,
             )
 
+        # --------------------------------------------------
+        # 重要地点分析
+        # board本体を進める前に、コピー上で指し手後の局面を作る。
+        # --------------------------------------------------
+        after_board = board.copy()
+        after_board.push(move)
+
+        square_analysis = serialize_square_analysis(
+            before=board,
+            after=after_board,
+            mover_color=board.turn,
+            pipeline_result=mcts_pipeline_result,
+        )
+
         # 実際の指し手を実行。
         board.push(move)
 
@@ -867,7 +1099,16 @@ def main() -> None:
             mcts_data=mcts_data,
         )
 
+        square_summary = summarize_square_analysis(
+            square_analysis
+        )
+        if square_summary:
+            final_explanation = (
+                f"{final_explanation} {square_summary}"
+            )
+
         result["explanation"] = final_explanation
+        result["square_analysis"] = square_analysis
 
         results.append(
             result

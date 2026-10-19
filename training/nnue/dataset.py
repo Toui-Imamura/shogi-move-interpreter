@@ -13,78 +13,82 @@ from torch.utils.data import Dataset
 BLACK = cshogi.BLACK
 WHITE = cshogi.WHITE
 
-# 教師評価値を [-1, 1] に正規化するスケール。
-# 1000cp -> tanh(1) ≈ 0.762
 TEACHER_SCORE_SCALE = 1000.0
 
 
 @dataclass(frozen=True)
 class NNUERecord:
-    """
-    NNUE学習用の1局面。
-
-    sfen:
-        学習対象局面
-
-    teacher_score_cp_black:
-        教師エンジンによるBlack視点の評価値(cp)
-
-    ply:
-        手数
-
-    side_to_move:
-        局面で手番になっている側
-    """
+    """NNUE学習用の1局面。"""
 
     sfen: str
     teacher_score_cp_black: float
     ply: int
     side_to_move: int
+    game_id: str
+    teacher_mate: int | None = None
 
 
 def load_position_records(
     path: str | Path,
+    exclude_mate: bool = False,
 ) -> list[NNUERecord]:
     """
-    teacher_values形式のJSONLからNNUE学習用レコードを読み込む。
+    teacher_values形式のJSONLを読み込む。
+
+    exclude_mate=True の場合、teacher_mate が None でない
+    レコードを除外する。元データは変更しない。
     """
 
     records: list[NNUERecord] = []
 
-    with Path(path).open(
-        "r",
-        encoding="utf-8",
-    ) as f:
-
+    with Path(path).open("r", encoding="utf-8") as f:
         for line_number, line in enumerate(f, start=1):
             if not line.strip():
                 continue
 
-            data = json.loads(line)
-
-            if "sfen" not in data:
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError as exc:
                 raise ValueError(
-                    f"Missing 'sfen' at line {line_number}"
-                )
+                    f"Invalid JSON at line {line_number}"
+                ) from exc
 
-            if "teacher_score_cp_black" not in data:
-                raise ValueError(
-                    "Missing 'teacher_score_cp_black' "
-                    f"at line {line_number}"
-                )
-
-            board = cshogi.Board(
-                sfen=data["sfen"]
+            required = (
+                "sfen",
+                "teacher_score_cp_black",
+                "ply",
+                "game_id",
             )
+            for key in required:
+                if key not in data:
+                    raise ValueError(
+                        f"Missing {key!r} at line {line_number}"
+                    )
+
+            mate_value = data.get("teacher_mate")
+
+            if exclude_mate and mate_value is not None:
+                continue
+
+            score = float(data["teacher_score_cp_black"])
+            if not math.isfinite(score):
+                raise ValueError(
+                    f"Non-finite teacher score at line {line_number}"
+                )
+
+            board = cshogi.Board(sfen=data["sfen"])
 
             records.append(
                 NNUERecord(
                     sfen=data["sfen"],
-                    teacher_score_cp_black=float(
-                        data["teacher_score_cp_black"]
-                    ),
+                    teacher_score_cp_black=score,
                     ply=int(data["ply"]),
                     side_to_move=int(board.turn),
+                    game_id=str(data["game_id"]),
+                    teacher_mate=(
+                        None if mate_value is None
+                        else int(mate_value)
+                    ),
                 )
             )
 
@@ -94,20 +98,7 @@ def load_position_records(
 def teacher_score_to_target(
     teacher_score_cp_black: float,
 ) -> float:
-    """
-    Black視点の教師評価値(cp)をNNUEの教師値[-1, 1]へ変換する。
-
-    変換:
-        target = tanh(cp / TEACHER_SCORE_SCALE)
-
-    例:
-        0cp       -> 0.000
-        500cp     -> 約0.462
-        1000cp    -> 約0.762
-        2000cp    -> 約0.964
-        100000cp  -> 1.000
-        -100000cp -> -1.000
-    """
+    """黒側視点の評価値(cp)を [-1, 1] に正規化する。"""
 
     return math.tanh(
         teacher_score_cp_black / TEACHER_SCORE_SCALE
@@ -115,26 +106,22 @@ def teacher_score_to_target(
 
 
 class NNUEPositionDataset(Dataset):
-    """
-    teacher_values形式JSONLからNNUE学習用の局面を提供するDataset。
-    """
+    """教師評価値JSONLからNNUE学習用の局面を提供する。"""
 
     def __init__(
         self,
         path: str | Path,
+        exclude_mate: bool = False,
     ):
         self.records = load_position_records(
-            path
+            path,
+            exclude_mate=exclude_mate,
         )
 
     def __len__(self) -> int:
         return len(self.records)
 
-    def __getitem__(
-        self,
-        index: int,
-    ) -> dict:
-
+    def __getitem__(self, index: int) -> dict:
         record = self.records[index]
 
         target = teacher_score_to_target(
@@ -145,7 +132,11 @@ class NNUEPositionDataset(Dataset):
             "sfen": record.sfen,
             "ply": record.ply,
             "side_to_move": record.side_to_move,
-            "teacher_score_cp_black": record.teacher_score_cp_black,
+            "game_id": record.game_id,
+            "teacher_mate": record.teacher_mate,
+            "teacher_score_cp_black": (
+                record.teacher_score_cp_black
+            ),
             "target": torch.tensor(
                 target,
                 dtype=torch.float32,

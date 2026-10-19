@@ -1,103 +1,209 @@
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import cshogi
-import torch
 
 from interpreter.feature_pipeline import compute_feature_pipeline
 from interpreter.mcts_explanation import explain_with_mcts
 from mcts.search import SimpleMCTS
-from mcts.variation import convert_variations, to_mcts_feature_inputs
-from training.nnue.network import NNUE
-from training.nnue.features import num_feature_ids
+from mcts.variation import (
+    convert_variations,
+    to_mcts_feature_inputs,
+)
+from mcts.yaneuraou_evaluator import YaneuraOuMCTSEvaluator
 
 
-def create_model() -> NNUE:
-    """
-    現時点ではMCTSパイプライン接続確認用に
-    ランダム初期化されたNNUEを生成する。
+DEFAULT_ENGINE = Path(
+    "/workspace/YaneuraOu/source/YaneuraOu-by-gcc"
+)
+DEFAULT_EVAL_DIR = Path(
+    "/workspace/YaneuraOu/source/eval"
+)
 
-    学習済みNNUEが完成したら、ここをチェックポイント
-    読み込みへ変更する。
-    """
-    torch.manual_seed(0)
 
-    return NNUE(
-        num_features=num_feature_ids(),
-        accumulator_size=256,
-        hidden_size=32,
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "YaneuraOu NNUE + MCTSによる"
+            "将棋の指し手解釈デモ"
+        )
     )
+
+    parser.add_argument(
+        "--move",
+        default="7g7f",
+        help="解釈対象の指し手（USI形式）",
+    )
+    parser.add_argument(
+        "--simulations",
+        type=int,
+        default=3,
+        help="MCTSのシミュレーション回数",
+    )
+    parser.add_argument(
+        "--mcts-depth",
+        type=int,
+        default=2,
+        help="MCTSの最大探索深さ",
+    )
+    parser.add_argument(
+        "--variations",
+        type=int,
+        default=3,
+        help="取得する変化手順数",
+    )
+    parser.add_argument(
+        "--engine-depth",
+        type=int,
+        default=1,
+        help="各局面のYaneuraOu探索深さ",
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=1,
+        help="YaneuraOuの探索スレッド数",
+    )
+    parser.add_argument(
+        "--hash",
+        type=int,
+        default=128,
+        help="YaneuraOuのハッシュサイズ（MB）",
+    )
+    parser.add_argument(
+        "--engine",
+        type=Path,
+        default=DEFAULT_ENGINE,
+        help="YaneuraOu実行ファイル",
+    )
+    parser.add_argument(
+        "--eval-dir",
+        type=Path,
+        default=DEFAULT_EVAL_DIR,
+        help="YaneuraOuの評価ファイルディレクトリ",
+    )
+
+    args = parser.parse_args()
+
+    if args.simulations <= 0:
+        parser.error("--simulations は正の整数にしてください")
+    if args.mcts_depth <= 0:
+        parser.error("--mcts-depth は正の整数にしてください")
+    if args.variations <= 0:
+        parser.error("--variations は正の整数にしてください")
+    if args.engine_depth <= 0:
+        parser.error("--engine-depth は正の整数にしてください")
+    if args.threads <= 0:
+        parser.error("--threads は正の整数にしてください")
+    if args.hash <= 0:
+        parser.error("--hash は正の整数にしてください")
+
+    return args
 
 
 def main() -> None:
+    args = parse_args()
+
+    # S0: 初期局面
     board = cshogi.Board()
 
-    move_usi = "7g7f"
-    move = board.move_from_usi(move_usi)
+    move = board.move_from_usi(args.move)
 
     if not board.is_legal(move):
-        raise ValueError(f"illegal move: {move_usi}")
+        raise ValueError(
+            f"合法手ではありません: {args.move}"
+        )
 
-    print("=== Move ===")
-    print(move_usi)
+    print("=== Move interpretation demo ===")
+    print(f"Move: {args.move}")
+    print(f"MCTS simulations: {args.simulations}")
+    print(f"MCTS depth: {args.mcts_depth}")
+    print(f"YaneuraOu depth: {args.engine_depth}")
 
-    model = create_model()
-
-    print()
-    print("=== MCTS ===")
-
-    # まずは小規模探索で動作確認する。
-    mcts = SimpleMCTS(
-        model=model,
-        simulations=30,
-        max_depth=5,
-        exploration_constant=1.4,
-        device="cpu",
-    )
-
-    # 指し手を実行した後の局面から未来を探索する。
+    # S1: 実際の指し手を適用した局面
     after = board.copy()
     after.push(move)
 
-    search_result = mcts.search(after)
+    print()
+    print("=== YaneuraOu NNUE + MCTS ===")
 
-    variations = mcts.top_variations(
-        search_result,
-        num_variations=3,
-        max_depth=5,
-    )
+    # YaneuraOuのプロセスを再利用し、終了時に確実に閉じる。
+    with YaneuraOuMCTSEvaluator(
+        engine_path=str(args.engine),
+        eval_dir=str(args.eval_dir),
+        depth=args.engine_depth,
+        threads=args.threads,
+        hash_mb=args.hash,
+    ) as evaluator:
 
-    print(f"variations: {len(variations)}")
-
-    for index, variation in enumerate(variations, start=1):
-        print(
-            f"{index}: "
-            f"visits={variation.visits}, "
-            f"value={variation.value:.4f}, "
-            f"moves={len(variation.moves)}"
+        # SimpleMCTSには評価器をCallableとして渡す。
+        searcher = SimpleMCTS(
+            evaluator=evaluator,
+            simulations=args.simulations,
+            max_depth=args.mcts_depth,
+            exploration_constant=1.4,
         )
 
-        moves_usi = [
-            cshogi.move_to_usi(move)
-            for move in variation.moves
-        ]
+        # S1から未来の変化手順を探索する。
+        root = searcher.search(after)
 
-        print("   ", " ".join(moves_usi))
+        variations = searcher.top_variations(
+            root,
+            num_variations=args.variations,
+            max_depth=args.mcts_depth,
+        )
 
-    # MCTS variationを特徴量計算用へ変換する。
-    converted = convert_variations(
-        after,
-        variations,
-    )
+        print(f"Variations: {len(variations)}")
 
-    mcts_inputs = to_mcts_feature_inputs(
-        converted,
-    )
+        for index, variation in enumerate(
+            variations,
+            start=1,
+        ):
+            moves_usi = [
+                cshogi.move_to_usi(m)
+                for m in variation.moves
+            ]
 
-    # 元局面→実際の指し手→MCTS未来局面まで統合する。
-    pipeline_result = compute_feature_pipeline(
-        before=board,
-        move=move,
-        mcts_variations=mcts_inputs,
-    )
+            print(
+                f"{index}: "
+                f"visits={variation.visits}, "
+                f"value_black_cp={variation.value:.1f}, "
+                f"moves={' '.join(moves_usi)}"
+            )
 
+        if not variations:
+            print(
+                "変化手順が取得できなかったため、"
+                "特徴量計算をスキップします。"
+            )
+            return
+
+        # MCTSの変化手順を既存の特徴量計算形式へ変換。
+        converted = convert_variations(
+            after,
+            variations,
+        )
+
+        mcts_inputs = to_mcts_feature_inputs(
+            converted,
+        )
+
+        # S0 -> S1 -> MCTS未来局面の特徴量を統合。
+        pipeline_result = compute_feature_pipeline(
+            before=board,
+            move=move,
+            mcts_variations=mcts_inputs,
+        )
+
+    # ここではYaneuraOuのプロセスを終了済み。
+    # 特徴量計算結果を使った説明生成は継続できる。
     print()
     print("=== MCTS feature changes ===")
 
@@ -131,7 +237,7 @@ def main() -> None:
                 f"  {feature_name}: {change:+.4f}"
             )
 
-    # MCTSを利用した説明文を生成する。
+    # 既存の説明生成処理を利用する。
     explanation = explain_with_mcts(
         board=board,
         move=move,

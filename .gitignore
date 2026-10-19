@@ -28,3 +28,7 @@ data/processed/feature_weight_dataset_analysis/
 
 # Generated training logs and model artifacts
 data/training_logs/
+
+# Generated NNUE models and analysis outputs
+/data/models/
+/data/square_analysis_test.jsonl

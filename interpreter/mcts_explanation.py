@@ -399,12 +399,8 @@ def describe_mcts_variations(
         else:
             moves = extract_variation_moves(positions)
 
-        # compute_mcts_features() に渡したvariationの訪問回数は
-        # variation_result自身には保持されていないため、
-        # 現時点では0を設定する。
-        #
-        # 訪問回数を表示する必要がある場合は、
-        # 後ほどMCTSVariationにもvariation resultを対応付ける。
+        # variation_result自身には訪問回数が保持されていないが、
+        # pipeline_result.mcts.variation_visitsに対応する値が保持されている。
         visits = mcts.variation_visits[
             variation_index
         ]
@@ -529,6 +525,238 @@ def extract_feature_transition_evidence(
     )
 
     return evidence
+
+
+
+@dataclass(frozen=True)
+class ConcreteMCTSEvidence:
+    """
+    複数のMCTS variationに共通して現れる具体的な後続手。
+
+    variation_count:
+        その手が現れたvariation数。
+
+    total_visits:
+        その手を含むvariationの訪問回数の合計。
+        意図確率や正解確率ではない。
+    """
+
+    move: MoveDescription
+    variation_count: int
+    total_visits: int
+    variation_indices: tuple[int, ...]
+
+
+def extract_concrete_mcts_evidence(
+    board: cshogi.Board,
+    move: int,
+    pipeline_result: UnifiedFeaturePipelineResult,
+    *,
+    min_variation_count: int = 2,
+    max_evidence: int = 3,
+) -> list[ConcreteMCTSEvidence]:
+    """
+    MCTSの複数variationに繰り返し現れる具体的な後続手を抽出する。
+
+    対象手そのものは除外し、その後のvariationに現れる手だけを
+    集計する。
+
+    例えば、
+
+        Variation 1: 1c1d -> 1g1f
+        Variation 2: 2c2d -> 1g1f
+        Variation 3: 3c3d -> 1g1f
+
+    なら、
+
+        1g1f
+
+    を3つのvariationに共通する具体的な証拠として抽出する。
+
+    訪問回数はvariationを集約するための重みとしてのみ扱い、
+    指し手の意図確率とは解釈しない。
+    """
+
+    if board is None:
+        raise ValueError(
+            "board must not be None"
+        )
+
+    if pipeline_result is None:
+        raise ValueError(
+            "pipeline_result must not be None"
+        )
+
+    if min_variation_count <= 0:
+        raise ValueError(
+            "min_variation_count must be positive"
+        )
+
+    if max_evidence <= 0:
+        raise ValueError(
+            "max_evidence must be positive"
+        )
+
+    mcts = pipeline_result.mcts
+
+    if mcts is None:
+        return []
+
+    target_move_usi = cshogi.move_to_usi(move)
+
+    evidence_map: dict[
+        str,
+        dict[str, object],
+    ] = {}
+
+    for variation_index, variation_result in enumerate(
+        mcts.variation_results
+    ):
+        positions = list(
+            variation_result.positions
+        )
+
+        if len(positions) <= 1:
+            continue
+
+        moves = extract_variation_moves(
+            positions
+        )
+
+        visits = int(
+            mcts.variation_visits[
+                variation_index
+            ]
+        )
+
+        # 同じvariation内で同一手を複数回数えることを防ぐ。
+        seen_in_variation: set[str] = set()
+
+        for move_description in moves:
+            move_usi = move_description.move_usi
+
+            # 対象手そのものは後続手ではないため除外する。
+            if move_usi == target_move_usi:
+                continue
+
+            if move_usi in seen_in_variation:
+                continue
+
+            seen_in_variation.add(move_usi)
+
+            if move_usi not in evidence_map:
+                evidence_map[move_usi] = {
+                    "move": move_description,
+                    "variation_indices": set(),
+                    "total_visits": 0,
+                }
+
+            data = evidence_map[move_usi]
+
+            variation_indices = data[
+                "variation_indices"
+            ]
+            assert isinstance(
+                variation_indices,
+                set,
+            )
+
+            variation_indices.add(
+                variation_index
+            )
+
+            data["total_visits"] = (
+                int(data["total_visits"])
+                + visits
+            )
+
+    evidence: list[ConcreteMCTSEvidence] = []
+
+    for data in evidence_map.values():
+        variation_indices = sorted(
+            data["variation_indices"]
+        )
+
+        if len(variation_indices) < min_variation_count:
+            continue
+
+        move_description = data["move"]
+
+        assert isinstance(
+            move_description,
+            MoveDescription,
+        )
+
+        evidence.append(
+            ConcreteMCTSEvidence(
+                move=move_description,
+                variation_count=len(
+                    variation_indices
+                ),
+                total_visits=int(
+                    data["total_visits"]
+                ),
+                variation_indices=tuple(
+                    variation_indices
+                ),
+            )
+        )
+
+    evidence.sort(
+        key=lambda item: (
+            item.variation_count,
+            item.total_visits,
+        ),
+        reverse=True,
+    )
+
+    return evidence[:max_evidence]
+
+
+def _build_concrete_mcts_sentence(
+    evidence: Sequence[ConcreteMCTSEvidence],
+) -> str:
+    """
+    具体的なMCTS後続手から説明文を生成する。
+    """
+
+    if not evidence:
+        return ""
+
+    sentences: list[str] = []
+
+    for item in evidence:
+        move = item.move
+
+        if move.is_drop:
+            move_text = (
+                f"{move.piece_name}を"
+                f"{move.to_square}へ打つ手"
+            )
+        else:
+            move_text = (
+                f"{move.from_square}の"
+                f"{move.piece_name}が"
+                f"{move.to_square}へ進む手"
+            )
+
+        sentences.append(
+            f"{item.variation_count}つの展開で"
+            f"{move_text}"
+            f"が現れます"
+        )
+
+    if len(sentences) == 1:
+        return (
+            "MCTSの後続展開では、"
+            f"{sentences[0]}。"
+        )
+
+    return (
+        "MCTSの後続展開では、"
+        + "、".join(sentences)
+        + "。"
+    )
 
 
 def extract_mcts_changes(
@@ -877,8 +1105,18 @@ def explain_with_mcts(
         move_description
     )
 
-    mcts_sentence = _build_mcts_sentence(
-        mcts_changes
+    concrete_mcts_evidence = (
+        extract_concrete_mcts_evidence(
+            board,
+            move,
+            pipeline_result,
+        )
+    )
+
+    concrete_mcts_sentence = (
+        _build_concrete_mcts_sentence(
+            concrete_mcts_evidence
+        )
     )
 
     parts = [
@@ -886,8 +1124,10 @@ def explain_with_mcts(
         base_explanation,
     ]
 
-    if mcts_sentence:
-        parts.append(mcts_sentence)
+    if concrete_mcts_sentence:
+        parts.append(
+            concrete_mcts_sentence
+        )
 
     explanation = " ".join(
         part.strip()
