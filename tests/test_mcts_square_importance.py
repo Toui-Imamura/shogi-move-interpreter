@@ -140,3 +140,40 @@ def test_pipeline_square_importance_rejects_mismatched_lengths():
 
     with pytest.raises(ValueError):
         analyze_pipeline_square_importance(pipeline_result)
+
+
+def test_zero_visit_variation_is_excluded_from_aggregation():
+    before = cshogi.Board()
+    after = cshogi.Board()
+    after.push_usi("7g7f")
+
+    visited = compare_square_importance(
+        before, after, variation_index=0, visits=5
+    )
+    unvisited = compare_square_importance(
+        before, after, variation_index=1, visits=0
+    )
+
+    actual = aggregate_square_importance([visited, unvisited])
+    expected = aggregate_square_importance([visited])
+
+    assert actual == expected
+
+
+def test_mcts_analysis_skips_zero_visit_variation():
+    before = cshogi.Board()
+    after = before.copy()
+    after.push_usi("7g7f")
+
+    result = analyze_mcts_square_importance(
+        [[before, after], [before, after]],
+        [5, 0],
+    )
+
+    assert len(result.variations) == 1
+    assert result.variations[0].variation_index == 0
+    assert result.aggregated
+    assert all(
+        item.variation_count == 1
+        for item in result.aggregated
+    )

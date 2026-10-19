@@ -388,8 +388,13 @@ class SimpleMCTS:
         if max_depth <= 0:
             return []
 
+        # 未訪問候補は探索結果としての根拠を持たないため除外する。
         children = sorted(
-            root.children.values(),
+            (
+                child
+                for child in root.children.values()
+                if child.visits > 0
+            ),
             key=lambda child: child.visits,
             reverse=True,
         )

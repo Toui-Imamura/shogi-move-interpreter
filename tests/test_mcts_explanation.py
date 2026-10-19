@@ -376,3 +376,49 @@ def test_extract_concrete_mcts_evidence_without_mcts():
     )
 
     assert evidence == []
+
+
+def test_extract_concrete_mcts_evidence_ignores_zero_visit_variation():
+    import cshogi
+
+    from interpreter.feature_pipeline import compute_pipeline
+    from interpreter.mcts_explanation import extract_concrete_mcts_evidence
+    from interpreter.variation_features import compute_variation_features
+
+    board = cshogi.Board()
+    target_move = board.move_from_usi("7g7f")
+
+    variation1 = compute_variation_features(
+        board, ["7g7f", "1c1d", "1g1f"]
+    )
+    variation2 = compute_variation_features(
+        board, ["7g7f", "2c2d", "1g1f"]
+    )
+    variation3 = compute_variation_features(
+        board, ["7g7f", "3c3d", "1g1f"]
+    )
+
+    pipeline_result = compute_pipeline(
+        before=board,
+        move=target_move,
+        mcts_variations=[
+            {"result": variation1, "visits": 5},
+            {"result": variation2, "visits": 0},
+            {"result": variation3, "visits": 2},
+        ],
+    )
+
+    evidence = extract_concrete_mcts_evidence(
+        board,
+        target_move,
+        pipeline_result,
+    )
+
+    shared_move = next(
+        item for item in evidence
+        if item.move.move_usi == "1g1f"
+    )
+
+    assert shared_move.variation_count == 2
+    assert shared_move.total_visits == 7
+    assert shared_move.variation_indices == (0, 2)

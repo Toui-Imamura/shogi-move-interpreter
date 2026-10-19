@@ -152,6 +152,10 @@ def aggregate_square_importance(
 
         visits_by_variation[record.variation_index] = record.visits
 
+        # 同一variation内の訪問回数の整合性は検証し、0回は集計しない。
+        if record.visits == 0:
+            continue
+
         for change in record.changes:
             per_variation[record.variation_index][change.square].append(change)
 
@@ -250,6 +254,10 @@ def analyze_mcts_square_importance(
 
         if visits < 0:
             raise ValueError("variation visits must not be negative")
+
+        # 未訪問variationは局面比較・重要度集計から除外する。
+        if visits == 0:
+            continue
 
         for move_index in range(len(positions) - 1):
             records.append(

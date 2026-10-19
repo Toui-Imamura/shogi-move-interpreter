@@ -134,3 +134,24 @@ def test_mcts_pipeline_produces_40_dimensional_vector() -> None:
     )
 
     assert result.mcts is not None
+
+
+def test_top_variations_excludes_unvisited_candidates() -> None:
+    board = cshogi.Board()
+
+    searcher = SimpleMCTS(
+        evaluator=create_test_evaluator(),
+        simulations=1,
+        max_depth=3,
+        exploration_constant=1.4,
+    )
+
+    root = searcher.search(board)
+    variations = searcher.top_variations(
+        root,
+        num_variations=30,
+        max_depth=3,
+    )
+
+    assert variations
+    assert all(item.visits > 0 for item in variations)

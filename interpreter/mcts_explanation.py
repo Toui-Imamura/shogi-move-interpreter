@@ -612,6 +612,21 @@ def extract_concrete_mcts_evidence(
     for variation_index, variation_result in enumerate(
         mcts.variation_results
     ):
+        visits = int(
+            mcts.variation_visits[
+                variation_index
+            ]
+        )
+
+        if visits < 0:
+            raise ValueError(
+                "variation visits must not be negative"
+            )
+
+        # 未訪問variationを共通手の根拠に含めない。
+        if visits == 0:
+            continue
+
         positions = list(
             variation_result.positions
         )
@@ -621,12 +636,6 @@ def extract_concrete_mcts_evidence(
 
         moves = extract_variation_moves(
             positions
-        )
-
-        visits = int(
-            mcts.variation_visits[
-                variation_index
-            ]
         )
 
         # 同じvariation内で同一手を複数回数えることを防ぐ。
