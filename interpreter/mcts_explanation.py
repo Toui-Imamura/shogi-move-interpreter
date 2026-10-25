@@ -876,6 +876,9 @@ def _feature_name_to_text(
 
     positive = change > 0
 
+    if feature_name == "F07" and change == 0:
+        return None
+
     texts = {
         "F01": (
             "駒得を拡大する"
@@ -891,9 +894,9 @@ def _feature_name_to_text(
             "盤面上の利きや支配範囲を変化させる"
         ),
         "F07": (
-            "駒の可動性を高める"
+            "合法手数に基づく移動可能性の指標が増加する"
             if positive
-            else "駒の可動性を制限する"
+            else "合法手数に基づく移動可能性の指標が減少する"
         ),
         "F08": (
             "重要な地点の制御を強める"

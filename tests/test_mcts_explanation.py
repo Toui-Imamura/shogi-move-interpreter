@@ -7,6 +7,7 @@ from interpreter.mcts_explanation import (
     describe_move,
     extract_mcts_changes,
     extract_concrete_mcts_evidence,
+    _feature_name_to_text,
 )
 
 
@@ -422,3 +423,26 @@ def test_extract_concrete_mcts_evidence_ignores_zero_visit_variation():
     assert shared_move.variation_count == 2
     assert shared_move.total_visits == 7
     assert shared_move.variation_indices == (0, 2)
+
+
+
+def test_f07_explanation_describes_indicator_increase():
+    text = _feature_name_to_text("F07", 0.5)
+
+    assert text == (
+        "合法手数に基づく移動可能性の指標が増加する"
+    )
+
+
+def test_f07_explanation_describes_indicator_decrease():
+    text = _feature_name_to_text("F07", -0.5)
+
+    assert text == (
+        "合法手数に基づく移動可能性の指標が減少する"
+    )
+
+
+def test_f07_explanation_does_not_describe_zero_as_decrease():
+    text = _feature_name_to_text("F07", 0.0)
+
+    assert text is None
