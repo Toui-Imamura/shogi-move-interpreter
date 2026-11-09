@@ -4,9 +4,6 @@ king_safety.py
 F26:
     玉の安全性
 
-F24:
-    玉の安全性の変化
-
 設計:
     KingSafety =
         a1 * OwnControl
@@ -326,61 +323,6 @@ def f26_king_safety(
         white_enemy_control=white_enemy,
         white_escape=white_escape,
         white_attackers=white_attackers,
-    )
-
-
-# ============================================================
-# F24 玉の安全性の変化
-# ============================================================
-
-
-@dataclass(frozen=True)
-class F24KingSafetyChange:
-    """
-    F24 玉の安全性の変化。
-
-    F24 = ΔF26
-    """
-
-    black: float
-    white: float
-    difference: float
-
-
-def f24_king_safety_change(
-    before: cshogi.Board,
-    after: cshogi.Board,
-) -> F24KingSafetyChange:
-    """
-    F26について、
-
-        ΔF26 = F26(after) - F26(before)
-
-    を計算する。
-    """
-
-    before_value = f26_king_safety(
-        before,
-    )
-
-    after_value = f26_king_safety(
-        after,
-    )
-
-    black_change = (
-        after_value.black
-        - before_value.black
-    )
-
-    white_change = (
-        after_value.white
-        - before_value.white
-    )
-
-    return F24KingSafetyChange(
-        black=black_change,
-        white=white_change,
-        difference=black_change - white_change,
     )
 
 

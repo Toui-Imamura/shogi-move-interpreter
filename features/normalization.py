@@ -88,7 +88,6 @@ DEFAULT_FEATURE_SCALES: dict[str, float] = {
     "F21": 1.0,
     "F22": 1.0,
     "F23": 1.0,
-    "F24": 1.0,
     "F25": 1.0,
     "F26": 1.0,
     "F27": 1.0,

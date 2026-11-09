@@ -968,11 +968,6 @@ def _feature_name_to_text(
             if positive
             else "守備力を低下させる"
         ),
-        "F24": (
-            "玉の安全性を高める"
-            if positive
-            else "玉の安全性を低下させる"
-        ),
         "F25": (
             "相手の攻撃への対応を強める"
             if positive

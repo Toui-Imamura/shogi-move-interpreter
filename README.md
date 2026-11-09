@@ -93,7 +93,6 @@ F01～F40は初期目標として40個を設定する。実験によって、相
 | F21 | 攻撃集中度の変化 | B | Attack |
 | F22 | 脅威形成の変化 | B | Attack |
 | F23 | 防御力の変化 | B | Defense |
-| F24 | 玉安全性の変化 | B | Defense |
 | F25 | 相手攻撃への対応力の変化 | B | Defense |
 | F26 | 玉の安全性 | A | KingSafety |
 | F27 | 守備駒配置の変化 | B | Defense |
@@ -389,14 +388,6 @@ F11が状態、F19が変化を表す。
 
 守備駒数、玉周辺の利き、相手攻撃への応答可能性を統合する。
 
-### F24 玉安全性の変化
-
-`compute_king_safety_change(current, future)`
-
-`ΔF24 = F26(Sv) - F26(S0)`
-
-玉を安全にする、危険にさらすなどを表す。
-
 ### F25 相手攻撃への対応力の変化
 
 `compute_counter_attack_response(current, future)`
@@ -621,7 +612,6 @@ F22 脅威形成
 F17 守備駒数  
 F18 玉周辺の利き  
 F23 防御力変化  
-F24 玉安全性変化  
 F25 対応力  
 F26 玉安全性  
 F27 守備配置

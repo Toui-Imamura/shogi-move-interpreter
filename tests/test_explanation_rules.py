@@ -21,7 +21,7 @@ def test_generate_attack_candidate() -> None:
 def test_select_top_candidates() -> None:
     deltas = {
         "F11": 0.8,
-        "F24": 0.7,
+        "F26": 0.7,
         "F28": 0.5,
     }
 

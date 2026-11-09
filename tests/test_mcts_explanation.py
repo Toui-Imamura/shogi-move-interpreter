@@ -51,7 +51,7 @@ def test_extract_mcts_changes_returns_sorted_changes():
             "F01": 0.01,
             "F07": 0.40,
             "F11": -0.80,
-            "F24": 0.20,
+            "F26": 0.20,
         }
 
     class FakeMCTS:
@@ -69,7 +69,7 @@ def test_extract_mcts_changes_returns_sorted_changes():
     assert [item.feature_name for item in changes] == [
         "F11",
         "F07",
-        "F24",
+        "F26",
     ]
 
     assert changes[0].change == -0.80

@@ -63,7 +63,6 @@ from features.defense import (
 )
 
 from features.king_safety import (
-    f24_king_safety_change,
     f26_king_safety,
 )
 
@@ -588,19 +587,6 @@ def compute_defense_feature_deltas(
 
     result["F23"] = float(
         f23_black.score - f23_white.score
-    )
-
-    # --------------------------------------------------
-    # F24: 玉の安全性変化
-    #
-    # f24_king_safety_change()自体が
-    # beforeとafterの変化を返す。
-    # --------------------------------------------------
-    result["F24"] = _difference(
-        f24_king_safety_change(
-            before,
-            after,
-        )
     )
 
     # --------------------------------------------------

@@ -210,7 +210,7 @@ def test_real_shogi_immediate_features():
         cshogi.Board,
     )
 
-    assert len(deltas) == 31
+    assert len(deltas) == 30
 
     for value in deltas.values():
         assert isinstance(value, float)
@@ -233,7 +233,7 @@ def test_unified_pipeline_without_variation():
         UnifiedFeaturePipelineResult,
     )
 
-    assert len(result.immediate_deltas) == 31
+    assert len(result.immediate_deltas) == 30
 
     assert result.variation is None
 

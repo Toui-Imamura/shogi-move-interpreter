@@ -190,11 +190,6 @@ def generate_explanation_candidates(
             "守備力を高める",
         ),
         (
-            "F24",
-            82,
-            "玉の安全性を高める",
-        ),
-        (
             "F26",
             82,
             "玉の安全性を改善する",
@@ -329,11 +324,6 @@ def generate_explanation_candidates(
 
     for feature_name, priority, text in [
         (
-            "F24",
-            82,
-            "玉の安全性が低下する一方、攻撃などの別の目的を持つ可能性がある",
-        ),
-        (
             "F26",
             82,
             "玉の安全性が低下する一方、攻撃などの別の目的を持つ可能性がある",
@@ -381,12 +371,6 @@ def select_top_explanation_candidates(
 
     は同時に発生しても、説明文では1つの攻撃駒数の変化として扱う。
 
-    同様に、
-
-    F24「玉の安全性を高める」
-    F26「玉の安全性を改善する」
-
-    も1つにまとめる。
     """
 
     if max_candidates <= 0:
@@ -396,7 +380,6 @@ def select_top_explanation_candidates(
     # 代表となる候補は priority / score の高いものを採用する。
     semantic_groups: dict[str, set[str]] = {
         "attack_piece_count": {"F12", "F20"},
-        "king_safety": {"F24", "F26"},
     }
 
     feature_to_group: dict[str, str] = {}
